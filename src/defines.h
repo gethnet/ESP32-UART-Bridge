@@ -12,24 +12,29 @@ Optimized for drone autopilots (ArduPilot, PX4) but works with any UART protocol
 ===============================================================================
                            ESP32-S3 Boards
 ===============================================================================
-Hardware: ESP32-S3-Zero / ESP32-S3 Super Mini / XIAO ESP32-S3
+Hardware: ESP32-S3-Zero / ESP32-S3 Super Mini / XIAO ESP32-S3 / ESP32-S3 DevKitC-1
 - GPIO0: BOOT button (triple-click for WiFi config)
 - Device 1 - Main UART:
   - Zero/SuperMini: GPIO4/5 (RX/TX)
   - XIAO: GPIO4/5 (D3/D4 pins)
+  - DevKitC-1: GPIO4/5
 - RTS/CTS flow control:
   - Zero/SuperMini: GPIO6/7
   - XIAO: GPIO1/2 (D0/D1 pins)
+  - DevKitC-1: GPIO6/7
 - Device 2 - Secondary UART or USB:
   - Zero/SuperMini: GPIO8/9 (RX/TX)
   - XIAO: GPIO8/9 (D8/D9 pins)
+  - DevKitC-1: GPIO8/9
 - Device 3 - Logger/Mirror/Bridge UART:
   - Zero/SuperMini: GPIO11/12 (RX/TX)
   - XIAO: GPIO43/44 (D6/D7 pins)
+  - DevKitC-1: GPIO11/12
 - LED:
   - S3-Zero: GPIO21 (WS2812 RGB)
   - Super Mini: GPIO48 (WS2815 RGB)
   - XIAO: GPIO21 (single-color, inverted)
+  - DevKitC-1: external LED typically on GPIO48 (not guaranteed on all clones)
 
 ===============================================================================
                         ESP32 MiniKit (WROOM-32)
@@ -56,6 +61,7 @@ Hardware: ESP32-WROOM-32 based development board
 - S3 Zero: USB Host support, WS2812 LED on GPIO21
 - S3 Super Mini: No USB Host, WS2815 LED on GPIO48
 - XIAO ESP32-S3: USB Host support, single-color LED on GPIO21, compact pinout
+- ESP32-S3 DevKitC-1: USB Host support, generic dev board pinout, optional RGB LED on some variants
 - MiniKit: USB Device only (no Host), no UART2 option, no PSRAM,
   single-color LED on GPIO2, triple RESET
 
@@ -81,14 +87,21 @@ Hardware: ESP32-WROOM-32 based development board
 #define UART_RX_PIN         4   // Zero/SuperMini: GPIO4, XIAO: GPIO4 (D3)
 #define UART_TX_PIN         5   // Zero/SuperMini: GPIO5, XIAO: GPIO5 (D4)
 // Board type verification at compile time
-#if defined(BOARD_ESP32_S3_SUPER_MINI) && defined(BOARD_ESP32_S3_ZERO)
-  #error "Both BOARD_ESP32_S3_SUPER_MINI and BOARD_ESP32_S3_ZERO are defined - this should not happen"
+#if (defined(BOARD_ESP32_S3_SUPER_MINI) && defined(BOARD_ESP32_S3_ZERO)) || \
+    (defined(BOARD_ESP32_S3_SUPER_MINI) && defined(BOARD_ESP32_S3_DEVKITC_1)) || \
+    (defined(BOARD_ESP32_S3_ZERO) && defined(BOARD_ESP32_S3_DEVKITC_1))
+  #error "Multiple ESP32-S3 board types are defined - this should not happen"
 #endif
 
 // LED pin varies by board
 #if defined(BOARD_ESP32_S3_SUPER_MINI)
   #define LED_PIN1          48  // WS2815 RGB LED on GPIO48 for Super Mini
   #define BOARD_TYPE_STRING "ESP32-S3 Super Mini"
+#elif defined(BOARD_ESP32_S3_DEVKITC_1)
+  #define LED_PIN1          48  // Common onboard RGB LED on many DevKitC-1 variants/clones; may need adjustment per board
+  #define BOARD_TYPE_STRING "ESP32-S3 DevKitC-1"
+  #define LED_TYPE_SINGLE_COLOR  // Safe default until LED wiring is verified on hardware
+  #define LED_ACTIVE_HIGH
 #elif defined(BOARD_XIAO_ESP32_S3)
   #define LED_PIN1          21  // Single color LED on GPIO21 for XIAO (inverted: LOW=ON)
   #define BOARD_TYPE_STRING "XIAO ESP32-S3"

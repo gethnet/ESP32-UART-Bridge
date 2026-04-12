@@ -14,6 +14,7 @@ extern BridgeMode bridgeMode;
 // Global access to context (for TaskScheduler callbacks)
 static BridgeContext* g_bridgeContext = nullptr;
 
+
 void setBridgeContext(BridgeContext* ctx) {
     g_bridgeContext = ctx;
 }

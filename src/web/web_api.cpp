@@ -95,6 +95,15 @@ static void populateApiConfig(JsonDocument& doc) {
 #if defined(BOARD_ESP32_S3_SUPER_MINI)
     doc["boardType"] = "s3supermini";
     doc["usbHostSupported"] = false;
+#elif defined(BOARD_ESP32_S3_DEVKITC_1)
+    #if defined(BLE_ENABLED)
+        doc["boardType"] = "s3devkitc1_ble";
+        doc["bleSupported"] = true;
+    #else
+        doc["boardType"] = "s3devkitc1";
+        doc["bleSupported"] = false;
+    #endif
+    doc["usbHostSupported"] = true;
 #elif defined(BOARD_XIAO_ESP32_S3)
     doc["boardType"] = "xiao";
     doc["usbHostSupported"] = true;
