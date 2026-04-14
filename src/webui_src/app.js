@@ -513,19 +513,32 @@ document.addEventListener('alpine:init', () => {
 
         // Computed: Device 1 pins text
         get device1PinsText() {
+            const isDevKitC1 = this.boardType === 's3devkitc1' || this.boardType === 's3devkitc1_ble';
             if (this.device1Role === '0') {
+                if (isDevKitC1) return 'GPIO 4/5 (RX/TX)';
                 return this._formatGpioPair(4, 5);
             }
+            if (isDevKitC1) return 'GPIO 4 (RX)';  // SBUS IN / CRSF IN
             return this._formatGpio(4) + ' (RX)';  // SBUS IN / CRSF IN
         },
 
         // Computed: Device 2 pins text
         get device2PinsText() {
             const role = this.device2Role;
-            if (role === '1') return this._formatGpioPair(8, 9);  // UART2
+            const isDevKitC1 = this.boardType === 's3devkitc1' || this.boardType === 's3devkitc1_ble';
+            if (role === '1') {
+                if (isDevKitC1) return 'GPIO 18/17 (U1RXD/U1TXD)';
+                return this._formatGpioPair(8, 9);  // UART2
+            }
             if (role === '2' || role === '5' || role === '6' || role === '7' || role === '8') return 'USB';
-            if (role === '3') return this._formatGpio(8) + ' (RX)'; // SBUS IN
-            if (role === '4') return this._formatGpio(9) + ' (TX)'; // SBUS OUT
+            if (role === '3') {
+                if (isDevKitC1) return 'GPIO 18 (RX)'; // SBUS IN
+                return this._formatGpio(8) + ' (RX)'; // SBUS IN
+            }
+            if (role === '4') {
+                if (isDevKitC1) return 'GPIO 17 (TX)'; // SBUS OUT
+                return this._formatGpio(9) + ' (TX)'; // SBUS OUT
+            }
             return 'N/A';
         },
 
@@ -537,11 +550,13 @@ document.addEventListener('alpine:init', () => {
 
             if (role === '1' || role === '2') {  // UART3 Mirror/Bridge
                 if (isMiniKit) return 'GPIO 16/17';
-                return isXiao ? this._formatGpioPair(43, 44) : 'GPIO 11/12';
+                if (isXiao) return this._formatGpioPair(43, 44);
+                return 'GPIO 11/12';  // Zero, SuperMini, DevKitC-1 all use 11/12
             }
             if (role === '3') {  // UART3 Logger
                 if (isMiniKit) return 'GPIO 17 (TX only)';
-                return isXiao ? this._formatGpio(43) + ' (TX only)' : 'GPIO 12 (TX only)';
+                if (isXiao) return this._formatGpio(43) + ' (TX only)';
+                return 'GPIO 12 (TX only)';  // Zero, SuperMini, DevKitC-1
             }
             if (role === '4') {  // SBUS IN
                 if (isMiniKit) return 'GPIO 16 (RX)';
@@ -1213,7 +1228,9 @@ document.addEventListener('alpine:init', () => {
                 'minikit_bt': 'ESP32 MiniKit BT',
                 'minikit_ble': 'ESP32 MiniKit BLE',
                 's3zero': 'ESP32-S3-Zero',
-                's3zero_ble': 'ESP32-S3-Zero BLE'
+                's3zero_ble': 'ESP32-S3-Zero BLE',
+                's3devkitc1': 'ESP32-S3 DevKitC-1 (N32R16V)',
+                's3devkitc1_ble': 'ESP32-S3 DevKitC-1 BLE (N32R16V)'
             };
             return names[boardType] || 'ESP32-S3-Zero';
         },

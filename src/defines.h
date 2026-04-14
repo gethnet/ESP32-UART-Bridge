@@ -17,24 +17,24 @@ Hardware: ESP32-S3-Zero / ESP32-S3 Super Mini / XIAO ESP32-S3 / ESP32-S3 DevKitC
 - Device 1 - Main UART:
   - Zero/SuperMini: GPIO4/5 (RX/TX)
   - XIAO: GPIO4/5 (D3/D4 pins)
-  - DevKitC-1: GPIO4/5
+  - DevKitC-1 (Rev 1.1): GPIO4/5
 - RTS/CTS flow control:
   - Zero/SuperMini: GPIO6/7
   - XIAO: GPIO1/2 (D0/D1 pins)
-  - DevKitC-1: GPIO6/7
+  - DevKitC-1 (Rev 1.1, N32R16V): GPIO15/16 (U0RTS/U0CTS)
 - Device 2 - Secondary UART or USB:
   - Zero/SuperMini: GPIO8/9 (RX/TX)
   - XIAO: GPIO8/9 (D8/D9 pins)
-  - DevKitC-1: GPIO8/9
+  - DevKitC-1 (Rev 1.1): GPIO18/17 (U1RXD/U1TXD)
 - Device 3 - Logger/Mirror/Bridge UART:
   - Zero/SuperMini: GPIO11/12 (RX/TX)
   - XIAO: GPIO43/44 (D6/D7 pins)
-  - DevKitC-1: GPIO11/12
+  - DevKitC-1: GPIO11/12 (default)
 - LED:
   - S3-Zero: GPIO21 (WS2812 RGB)
   - Super Mini: GPIO48 (WS2815 RGB)
   - XIAO: GPIO21 (single-color, inverted)
-  - DevKitC-1: external LED typically on GPIO48 (not guaranteed on all clones)
+  - DevKitC-1 Rev 1.1: GPIO38 (WS2812 RGB, onboard)
 
 ===============================================================================
                         ESP32 MiniKit (WROOM-32)
@@ -76,7 +76,7 @@ Hardware: ESP32-WROOM-32 based development board
 
 // Device identification
 #define DEVICE_NAME "ESP32 UART Bridge"
-#define DEVICE_VERSION "2.19.0"
+#define DEVICE_VERSION "2.19.1"
 
 // Hardware pins - Device 1 (Main UART)
 #if defined(BOARD_MINIKIT_ESP32)
@@ -93,15 +93,21 @@ Hardware: ESP32-WROOM-32 based development board
   #error "Multiple ESP32-S3 board types are defined - this should not happen"
 #endif
 
+// DevKitC-1 module variant verification (pin-compatible: N8R8 / N16R8 / N32R8 / N32R16V)
+#if defined(BOARD_ESP32_S3_DEVKITC_1) && !defined(DEVKITC1_FLASH_MB)
+  #warning "DEVKITC1_FLASH_MB not set, defaulting to 32 (N32R16V). Set -D DEVKITC1_FLASH_MB=N in platformio.ini for your variant (8, 16, 32)."
+  #define DEVKITC1_FLASH_MB 32
+#endif
+
 // LED pin varies by board
 #if defined(BOARD_ESP32_S3_SUPER_MINI)
   #define LED_PIN1          48  // WS2815 RGB LED on GPIO48 for Super Mini
   #define BOARD_TYPE_STRING "ESP32-S3 Super Mini"
 #elif defined(BOARD_ESP32_S3_DEVKITC_1)
-  #define LED_PIN1          48  // Common onboard RGB LED on many DevKitC-1 variants/clones; may need adjustment per board
+  #define LED_PIN1          38  // Onboard RGB LED (WS2812) on Espressif DevKitC-1 N32R16V
+  #define UART_RX_PIN       4   // GPIO4 (was 44 — USB-JTAG claims GPIO43/44 on S3)
+  #define UART_TX_PIN       5   // GPIO5 (was 43)
   #define BOARD_TYPE_STRING "ESP32-S3 DevKitC-1"
-  #define LED_TYPE_SINGLE_COLOR  // Safe default until LED wiring is verified on hardware
-  #define LED_ACTIVE_HIGH
 #elif defined(BOARD_XIAO_ESP32_S3)
   #define LED_PIN1          21  // Single color LED on GPIO21 for XIAO (inverted: LOW=ON)
   #define BOARD_TYPE_STRING "XIAO ESP32-S3"
@@ -120,10 +126,13 @@ Hardware: ESP32-WROOM-32 based development board
   #define BOARD_TYPE_STRING "ESP32-S3-Zero (default)"
   #warning "Board type not specified, defaulting to ESP32-S3-Zero configuration"
 #endif
-// RTS/CTS pins vary by board
+// RTS/CTS pins vary by board (Device 1 flow control)
 #if defined(BOARD_XIAO_ESP32_S3)
   #define RTS_PIN             1   // XIAO: GPIO1 (D0) - flow control
   #define CTS_PIN             2   // XIAO: GPIO2 (D1) - flow control
+#elif defined(BOARD_ESP32_S3_DEVKITC_1)
+  #define RTS_PIN             15  // DevKitC-1 Rev 1.1: U0RTS
+  #define CTS_PIN             16  // DevKitC-1 Rev 1.1: U0CTS
 #elif defined(BOARD_MINIKIT_ESP32)
   #define RTS_PIN             18  // MiniKit: GPIO18 - flow control (GPIO6/7 unavailable)
   #define CTS_PIN             19  // MiniKit: GPIO19 - flow control
@@ -133,8 +142,13 @@ Hardware: ESP32-WROOM-32 based development board
 #endif
 
 // Device 2 - Secondary UART pins
-#define DEVICE2_UART_RX_PIN 8   // Zero/SuperMini: GPIO8, XIAO: GPIO8 (D8)
-#define DEVICE2_UART_TX_PIN 9   // Zero/SuperMini: GPIO9, XIAO: GPIO9 (D9)
+#if defined(BOARD_ESP32_S3_DEVKITC_1)
+  #define DEVICE2_UART_RX_PIN 18  // DevKitC-1 Rev 1.1: U1RXD
+  #define DEVICE2_UART_TX_PIN 17  // DevKitC-1 Rev 1.1: U1TXD
+#else
+  #define DEVICE2_UART_RX_PIN 8   // Zero/SuperMini: GPIO8, XIAO: GPIO8 (D8)
+  #define DEVICE2_UART_TX_PIN 9   // Zero/SuperMini: GPIO9, XIAO: GPIO9 (D9)
+#endif
 
 // Device 3 - Logger/Mirror/Bridge pins
 #if defined(BOARD_XIAO_ESP32_S3)
