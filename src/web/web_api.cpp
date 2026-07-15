@@ -138,6 +138,7 @@ static void populateApiConfig(JsonDocument& doc) {
     doc["parity"] = parity_to_string(config.parity);
     doc["stopbits"] = atoi(stop_bits_to_string(config.stopbits));
     doc["flowcontrol"] = config.flowcontrol;
+    doc["uart1InvertRx"] = config.uart1InvertRx;
 
     // WiFi configuration
     doc["ssid"] = config.ssid;
@@ -467,6 +468,15 @@ void handleSaveJson(AsyncWebServerRequest *request) {
             config.flowcontrol = newFlowcontrol;
             configChanged = true;
             log_msg(LOG_INFO, "Flow control %s", newFlowcontrol ? "enabled" : "disabled");
+        }
+    }
+
+    if (doc.containsKey("uart1InvertRx")) {
+        bool newInvert = doc["uart1InvertRx"];
+        if (newInvert != config.uart1InvertRx) {
+            config.uart1InvertRx = newInvert;
+            configChanged = true;
+            log_msg(LOG_INFO, "UART1 RX inversion %s", newInvert ? "enabled" : "disabled");
         }
     }
 

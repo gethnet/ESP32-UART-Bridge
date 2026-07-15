@@ -140,6 +140,11 @@
                                 <line x1="4" y1="15" x2="16" y2="15" :stroke="$store.app.terminalAnsi ? '#888' : '#61afef'" stroke-width="2.5"/>
                             </svg>
                         </span>
+                        <span @click="$store.app.termToggleHex()" class="term-btn"
+                              title="Toggle hex dump view (show raw bytes)"
+                              :style="$store.app.termHexMode ? 'color:#e5c07b' : 'color:#888'">
+                            <span style="font-family:monospace;font-size:11px;font-weight:bold;letter-spacing:-1px">0x</span>
+                        </span>
                         <span @click="$store.app.termToggleFullscreen()" class="term-btn" title="Toggle fullscreen">
                             <svg x-show="!$store.app.termFullscreen" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="#888" stroke-width="1.5">
                                 <path d="M3 7V3h4M13 3h4v4M17 13v4h-4M7 17H3v-4"></path>
@@ -149,14 +154,16 @@
                             </svg>
                         </span>
                     </div>
-                    <!-- Terminal output: plain text or xterm.js (mutually exclusive) -->
-                    <template x-if="!$store.app.terminalAnsi">
+                    <!-- Terminal output: plain <pre> or xterm.js (mutually exclusive).
+                         Hex mode forces <pre> regardless of ANSI toggle — xterm can't keep up
+                         with hexdump text throughput. -->
+                    <template x-if="!$store.app.terminalAnsi || $store.app.termHexMode">
                         <pre x-ref="termOutput"
                              x-effect="$nextTick(() => { if ($refs.termOutput) $refs.termOutput.scrollTop = $refs.termOutput.scrollHeight })"
                              :style="'background: #1e1e1e; color: #d4d4d4; padding: 10px; margin: 0; min-height: 60px; overflow-y: auto; font-size: 12px; font-family: Consolas, Courier New, monospace; white-space: pre-wrap; word-wrap: break-word;' + ($store.app.termFullscreen ? 'flex: 1; max-height: none;' : 'max-height: 300px;')"
                              x-text="$store.app._termLines.join('\n')"></pre>
                     </template>
-                    <template x-if="$store.app.terminalAnsi">
+                    <template x-if="$store.app.terminalAnsi && !$store.app.termHexMode">
                         <div x-ref="xtermContainer"
                              x-init="$store.app.termInitXterm($refs.xtermContainer)"
                              x-effect="$store.app._termFitDelayed()"
@@ -1077,60 +1084,72 @@
                         <div id="uartConfigBlock" x-show="$store.app.hasUartDevices"
                              class="info-card">
                             <h5 id="uartConfigTitle" class="section-subtitle">🔌 UART Configuration</h5>
-                            <div id="uartConfigContent" style="display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end;">
-                                <div>
-                                    <label for="baudrate">Baud Rate:</label>
-                                    <div style="display: flex; gap: 5px; align-items: center;">
-                                        <select style="width: 110px;"
-                                            :value="$store.app.baudrateIsCustom ? 'custom' : String($store.app.baudrate)"
-                                            @change="if($event.target.value==='custom'){$store.app._customBaudrate=true}else{$store.app._customBaudrate=false;$store.app.baudrate=$event.target.value}">
-                                            <option value="9600">9600</option>
-                                            <option value="19200">19200</option>
-                                            <option value="38400">38400</option>
-                                            <option value="57600">57600</option>
-                                            <option value="115200">115200</option>
-                                            <option value="230400">230400</option>
-                                            <option value="460800">460800</option>
-                                            <option value="921600">921600</option>
-                                            <option value="custom">Custom</option>
+                            <div id="uartConfigContent">
+                                <!-- Row 1: UART line parameters -->
+                                <div style="display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end;">
+                                    <div>
+                                        <label for="baudrate">Baud Rate:</label>
+                                        <div style="display: flex; gap: 5px; align-items: center;">
+                                            <select style="width: 110px;"
+                                                :value="$store.app.baudrateIsCustom ? 'custom' : String($store.app.baudrate)"
+                                                @change="if($event.target.value==='custom'){$store.app._customBaudrate=true}else{$store.app._customBaudrate=false;$store.app.baudrate=$event.target.value}">
+                                                <option value="9600">9600</option>
+                                                <option value="19200">19200</option>
+                                                <option value="38400">38400</option>
+                                                <option value="57600">57600</option>
+                                                <option value="115200">115200</option>
+                                                <option value="230400">230400</option>
+                                                <option value="460800">460800</option>
+                                                <option value="921600">921600</option>
+                                                <option value="custom">Custom</option>
+                                            </select>
+                                            <input type="text" id="baudrate" name="baudrate"
+                                                x-show="$store.app.baudrateIsCustom"
+                                                style="width: 80px;"
+                                                inputmode="numeric"
+                                                x-model="$store.app.baudrate"
+                                                placeholder="420000">
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label for="databits">Data:</label>
+                                        <select name="databits" id="databits" style="width: 60px;" x-model="$store.app.databits">
+                                            <option value="5">5</option>
+                                            <option value="6">6</option>
+                                            <option value="7">7</option>
+                                            <option value="8">8</option>
                                         </select>
-                                        <input type="text" id="baudrate" name="baudrate"
-                                            x-show="$store.app.baudrateIsCustom"
-                                            style="width: 80px;"
-                                            inputmode="numeric"
-                                            x-model="$store.app.baudrate"
-                                            placeholder="420000">
+                                    </div>
+                                    <div>
+                                        <label for="parity">Parity:</label>
+                                        <select name="parity" id="parity" class="w-80" x-model="$store.app.parity">
+                                            <option value="N">None</option>
+                                            <option value="E">Even</option>
+                                            <option value="O">Odd</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label for="stopbits">Stop:</label>
+                                        <select name="stopbits" id="stopbits" style="width: 60px;" x-model="$store.app.stopbits">
+                                            <option value="1">1</option>
+                                            <option value="2">2</option>
+                                        </select>
                                     </div>
                                 </div>
-                                <div>
-                                    <label for="databits">Data:</label>
-                                    <select name="databits" id="databits" style="width: 60px;" x-model="$store.app.databits">
-                                        <option value="5">5</option>
-                                        <option value="6">6</option>
-                                        <option value="7">7</option>
-                                        <option value="8">8</option>
-                                    </select>
-                                </div>
-                                <div>
-                                    <label for="parity">Parity:</label>
-                                    <select name="parity" id="parity" class="w-80" x-model="$store.app.parity">
-                                        <option value="N">None</option>
-                                        <option value="E">Even</option>
-                                        <option value="O">Odd</option>
-                                    </select>
-                                </div>
-                                <div>
-                                    <label for="stopbits">Stop:</label>
-                                    <select name="stopbits" id="stopbits" style="width: 60px;" x-model="$store.app.stopbits">
-                                        <option value="1">1</option>
-                                        <option value="2">2</option>
-                                    </select>
-                                </div>
-                                <div title="Requires 4-wire connection (TX, RX, RTS, CTS)">
-                                    <label for="flowcontrol">Flow Control:</label>
-                                    <input type="checkbox" name="flowcontrol" id="flowcontrol" value="1"
-                                           x-model="$store.app.flowcontrol"
-                                           style="width: auto; height: 34px;">
+                                <!-- Row 2: checkboxes on their own line so they don't reflow with wider selects -->
+                                <div style="display: flex; flex-wrap: wrap; gap: 20px; margin-top: 10px; align-items: center;">
+                                    <label title="Requires 4-wire connection (TX, RX, RTS, CTS)" style="display: inline-flex; align-items: center; gap: 6px; margin: 0;">
+                                        <input type="checkbox" name="flowcontrol" id="flowcontrol" value="1"
+                                               x-model="$store.app.flowcontrol"
+                                               style="width: auto; height: auto; margin: 0;">
+                                        Flow Control
+                                    </label>
+                                    <label title="Hardware-invert RX line — for reading inverted UART sources (SBUS/F.Port on non-standard wiring). Applies only when Device 1 role = UART1." style="display: inline-flex; align-items: center; gap: 6px; margin: 0;">
+                                        <input type="checkbox" name="uart1InvertRx" id="uart1InvertRx" value="1"
+                                               x-model="$store.app.uart1InvertRx"
+                                               style="width: auto; height: auto; margin: 0;">
+                                        Invert RX
+                                    </label>
                                 </div>
                             </div>
                         </div>

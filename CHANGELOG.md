@@ -1,5 +1,25 @@
 # CHANGELOG
 
+## v2.20.1
+
+### Stability
+- **Web terminal panic fix**: heavy UART streams (>~20 KB/s) into the terminal WebSocket triggered a spinlock assert in `AsyncWebSocketClient::_queueMessage` — critical section exceeded 600 μs limit
+  - `terminal_ws_poll()` now sends **one 512B chunk per invocation** (was: full drain in a loop) — scheduler drains the buffer gradually at ~50 Hz
+  - `cleanupClients()` moved **before** `binaryAll()` so we never touch stale client pointers
+  - `WS_EVT_CONNECT`: 32 KB history-replay burst removed — it saturated the same mutex on every reconnect and looped the crash. New clients now catch the stream from the moment of connect
+- **Terminal flow now created even without telemetry destinations**: previously the flow (with `TerminalParser`) only spawned when at least one output device was configured, so a user with Device 2-5 all set to None saw an empty terminal
+
+### Terminal
+- **Hex dump view**: new `0x` toggle in the terminal header renders incoming bytes as `hexdump -C`-style output (`XX XX XX XX ...  |ascii|`) instead of decoded text. Critical for diagnosing unknown protocols, mismatched baud rates, framing issues. Client-side only (no backend changes) — WS binary decoded to Uint8Array, formatted in JS
+- **Hex mode always renders to `<pre>`** regardless of ANSI toggle — xterm.js can't keep up with 5× hex text throughput
+- **Text mode**: incoming data now written only to the visible container (xterm on ANSI on, `<pre>` on ANSI off) instead of both in parallel — halves event-loop cost
+
+### UART Configuration
+- **Invert RX checkbox** in UART Configuration section — hardware-invert Device 1 RX line via ESP-IDF `uart_set_line_inverse()`. Enables reading inverted UART sources (SBUS/F.Port etc.) through the generic UART1 bridge role for inspection via terminal hex view. Applies only in `D1_UART1` role; SBUS/CRSF roles keep their protocol-defined inversion
+  - New config field `Config.uart1InvertRx` (default `false`), JSON key `uart.invert_rx`, REST API field `uart1InvertRx`
+  - Startup log now includes `, RX inverted` suffix when the flag is set
+- **UI layout**: Flow Control and Invert RX checkboxes moved to their own row below Baud/Data/Parity/Stop selects — no more visual reflow when window width changes
+
 ## v2.20.0
 
 ### Hardware Support

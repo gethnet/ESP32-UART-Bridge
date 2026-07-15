@@ -165,7 +165,11 @@ void ProtocolPipeline::setupFlows(Config* config) {
         log_msg(LOG_WARNING, "No telemetry destinations configured - data will be dropped");
     }
     
-    if (telemetryMask && ctx->buffers.uart1InputBuffer &&
+    // Terminal protocol delivers data to the web UI via a WebSocket that reads
+    // from the parser's ring buffer, not via senderMask. So the flow must be
+    // created even when no telemetry destinations are configured.
+    bool needsTerminalFlow = (config->protocolOptimization == PROTOCOL_TERMINAL);
+    if ((telemetryMask || needsTerminalFlow) && ctx->buffers.uart1InputBuffer &&
         config->device1.role != D1_SBUS_IN && config->device1.role != D1_CRSF_IN) {
         DataFlow f;
         f.name = "Telemetry";

@@ -19,12 +19,22 @@
   - [x] Web input: keyboard toggle button → xterm onData → WebSocket → UART TX
   - [ ] Phase 3: dynamic UDP connect button near terminal window (non-persistent, applies on the fly)
   - [ ] Phase 4: configurable pattern matching → status badges (e.g. `login:` → Ready)
+  - [ ] Phase 5: **Hex view mode** — third toggle alongside ANSI on/off: show incoming bytes as `hexdump -C`-style output (`XX XX XX XX  XX XX XX XX  |ascii|`). Client-side only (no backend changes needed) — receive WS binary as Uint8Array, format lines in JS. Critical for diagnosing unknown/misparsed protocols (mismatched baud, wrong framing, unknown binary formats)
 
 #### Network Improvements
 
 - [ ] **DNS hostname support in UDP target**
   - Currently only IP address accepted, add `WiFi.hostByName()` resolve
   - Cache resolved IP with TTL to avoid per-packet DNS lookup
+
+- [ ] **WiFi network scan button in Client mode** — needs careful implementation
+  - Goal: add "Scan" button next to SSID fields, `esp_wifi_scan_start()` → list of visible networks with RSSI/security → click to auto-fill an SSID slot. Avoids silent auth-failures from typos.
+  - **First attempt in v2.20.1 was reverted**: blocking `esp_wifi_scan_start(&cfg, true)` from an HTTP handler (running in AsyncTCP task context) caused heap corruption that surfaced as a `LoadProhibited` crash in the mDNS service task on the next outgoing mDNS packet (`mdns_priv_if_write → pbuf_alloc → malloc → tlsf block_next → invalid pointer`). Concurrent WiFi scan + AP+STA + active mDNS is known-fragile on ESP-IDF.
+  - Proper implementation needs:
+    - Non-blocking `esp_wifi_scan_start(&cfg, false)` + event handler for `WIFI_EVENT_SCAN_DONE`, results cached in a static buffer with a mutex
+    - REST split: `POST /api/wifi/scan` starts, `GET /api/wifi/scan` returns `{status, results}` with client-side polling
+    - Coordination with existing scan loop in `wifi_manager` (it runs its own scan in Client mode — must not step on each other)
+    - Consider pausing mDNS (`mdns_free()` + `mdns_init()` around scan) or scheduling scan on core 1 via `xTaskCreatePinnedToCore` to reduce cross-subsystem races
 
 #### Advanced Protocol Management
 

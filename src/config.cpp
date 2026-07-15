@@ -100,6 +100,7 @@ void config_init(Config* config) {
     config->parity = UART_PARITY_DISABLE;
     config->stopbits = UART_STOP_BITS_1;
     config->flowcontrol = false;
+    config->uart1InvertRx = false;
     config->ssid = "";  // Empty = auto-generate unique SSID on first AP start
     config->password = DEFAULT_AP_PASSWORD;
     config->wifi_ap_mode = WIFI_AP_TEMPORARY;  // Default: WiFi on at boot, auto-disable after 5 min
@@ -253,6 +254,7 @@ bool config_load_from_json(Config* config, const String& jsonString) {
         config->stopbits = string_to_stop_bits(stopbits.toInt());
 
         config->flowcontrol = doc["uart"]["flowcontrol"] | false;
+        config->uart1InvertRx = doc["uart"]["invert_rx"] | false;
     }
 
     // Load WiFi settings
@@ -431,6 +433,7 @@ static void populateConfigExportJson(JsonDocument& doc, const Config* config) {
     doc["uart"]["parity"] = parity_to_string(config->parity);
     doc["uart"]["stopbits"] = stop_bits_to_string(config->stopbits);
     doc["uart"]["flowcontrol"] = config->flowcontrol;
+    doc["uart"]["invert_rx"] = config->uart1InvertRx;
 
     // WiFi settings
     doc["wifi"]["ssid"] = config->ssid;

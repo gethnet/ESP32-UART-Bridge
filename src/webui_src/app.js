@@ -13,7 +13,7 @@ const DEFAULT_OUT_RATE = '50';
 // Fields tracked for dirty checking (used in isDirty and _takeSnapshot)
 const TRACKED_FIELDS = [
     'device1Role', 'device2Role', 'device3Role', 'device4Role', 'device5Role',
-    'baudrate', 'databits', 'parity', 'stopbits', 'flowcontrol',
+    'baudrate', 'databits', 'parity', 'stopbits', 'flowcontrol', 'uart1InvertRx',
     'wifiMode', 'ssid', 'password', 'wifiApMode', 'wifiTxPower', 'wifiApChannel', 'mdnsHostname',
     'wifiNetwork0Ssid', 'wifiNetwork0Pass', 'wifiNetwork1Ssid', 'wifiNetwork1Pass',
     'wifiNetwork2Ssid', 'wifiNetwork2Pass', 'wifiNetwork3Ssid', 'wifiNetwork3Pass',
@@ -72,6 +72,7 @@ document.addEventListener('alpine:init', () => {
         parity: 'N',
         stopbits: '1',
         flowcontrol: false,  // Boolean for checkbox
+        uart1InvertRx: false, // Hardware-invert D1 RX line (D1_UART1 role only)
         _customBaudrate: false,  // User selected "Custom" in baudrate dropdown
 
         // WiFi config
@@ -266,6 +267,8 @@ document.addEventListener('alpine:init', () => {
         termFullscreen: false,
         termInputEnabled: false,
         termCsiFilter: true,
+        termHexMode: false,      // Show incoming bytes as hexdump instead of text
+        _hexPartial: null,       // Accumulator for incomplete 16-byte row (Uint8Array)
 
         termConnect() {
             if (this._termWs) return;
@@ -273,38 +276,56 @@ document.addEventListener('alpine:init', () => {
             const ws = new WebSocket(`${proto}//${location.host}/ws/terminal`);
             ws.binaryType = 'arraybuffer';
             ws.onmessage = (e) => {
+                // Hex view: format raw bytes as hexdump (XX XX XX ...  |ascii|)
+                // Bypasses text decoding entirely — shows exact wire bytes.
+                if (this.termHexMode && e.data instanceof ArrayBuffer) {
+                    // Hex mode always renders through <pre>/_termLines regardless
+                    // of ANSI toggle — xterm.js can't handle the 5x throughput of
+                    // hexdump text (200+ KB/s at 40 KB/s UART input) and stalls.
+                    const hex = this._formatHex(new Uint8Array(e.data));
+                    if (!hex) return;
+                    const lines = hex.split('\r\n');
+                    for (const line of lines) {
+                        if (line.length > 0) this._termLines.push(line);
+                    }
+                    while (this._termLines.length > this._termMaxLines) {
+                        this._termLines.shift();
+                    }
+                    return;
+                }
                 const text = (e.data instanceof ArrayBuffer)
                     ? new TextDecoder('utf-8', { fatal: false }).decode(e.data)
                     : e.data;
-                // Accumulate in _termLines, handling partial lines across chunks
-                // Remove previous partial line from display (will be replaced)
-                if (this._termPartial && this._termLines.length > 0 &&
-                    this._termLines[this._termLines.length - 1] === this._termPartial) {
-                    this._termLines.pop();
-                }
-                const lines = text.split('\n');
-                for (let i = 0; i < lines.length; i++) {
-                    if (i === 0 && this._termPartial) {
-                        this._termPartial += lines[i];
-                        if (lines.length > 1) {
-                            if (this._termPartial.length > 0) this._termLines.push(this._termPartial);
-                            this._termPartial = '';
+                // Write only to the visible container to save event-loop time:
+                // ANSI on → xterm; ANSI off → _termLines rendered by <pre>.
+                if (this._xterm) {
+                    this._xterm.write(text);
+                } else {
+                    if (this._termPartial && this._termLines.length > 0 &&
+                        this._termLines[this._termLines.length - 1] === this._termPartial) {
+                        this._termLines.pop();
+                    }
+                    const lines = text.split('\n');
+                    for (let i = 0; i < lines.length; i++) {
+                        if (i === 0 && this._termPartial) {
+                            this._termPartial += lines[i];
+                            if (lines.length > 1) {
+                                if (this._termPartial.length > 0) this._termLines.push(this._termPartial);
+                                this._termPartial = '';
+                            }
+                        } else if (i < lines.length - 1) {
+                            if (lines[i].length > 0) this._termLines.push(lines[i]);
+                        } else {
+                            this._termPartial = lines[i];
                         }
-                    } else if (i < lines.length - 1) {
-                        if (lines[i].length > 0) this._termLines.push(lines[i]);
-                    } else {
-                        this._termPartial = lines[i];
+                    }
+                    if (this._termPartial) {
+                        this._termLines.push(this._termPartial);
+                    }
+                    while (this._termLines.length > this._termMaxLines) {
+                        this._termLines.shift();
                     }
                 }
-                // Always show partial line (prompt without \n)
-                if (this._termPartial) {
-                    this._termLines.push(this._termPartial);
-                }
-                while (this._termLines.length > this._termMaxLines) {
-                    this._termLines.shift();
-                }
-                // Also write to xterm if active
-                if (this._xterm) this._xterm.write(text);
             };
             ws.onopen = () => { this._termWs = ws; };
             ws.onclose = () => {
@@ -374,6 +395,44 @@ document.addEventListener('alpine:init', () => {
         termToggleAnsi() {
             this.terminalAnsi = !this.terminalAnsi;
             if (this.terminalAnsi) this._termFitDelayed();
+        },
+
+        termToggleHex() {
+            this.termHexMode = !this.termHexMode;
+            this._hexPartial = null;
+            // Reset xterm on mode switch to avoid mixing text/hex output
+            if (this._xterm) this._xterm.reset();
+            this._termLines = [];
+        },
+
+        // Format bytes as hexdump: "C8 18 16 E0  03 5F E8 03  ...  |ascii|"
+        // Uses _hexPartial to carry incomplete 16-byte rows across WS chunks
+        _formatHex(bytes) {
+            let buf;
+            if (this._hexPartial && this._hexPartial.length > 0) {
+                buf = new Uint8Array(this._hexPartial.length + bytes.length);
+                buf.set(this._hexPartial);
+                buf.set(bytes, this._hexPartial.length);
+            } else {
+                buf = bytes;
+            }
+            const fullRows = Math.floor(buf.length / 16);
+            let out = '';
+            for (let i = 0; i < fullRows; i++) {
+                const base = i * 16;
+                let hexPart = '';
+                let ascPart = '';
+                for (let j = 0; j < 16; j++) {
+                    const c = buf[base + j];
+                    hexPart += c.toString(16).padStart(2, '0').toUpperCase() + ' ';
+                    ascPart += (c >= 0x20 && c < 0x7f) ? String.fromCharCode(c) : '.';
+                    if (j === 7) hexPart += ' ';
+                }
+                out += hexPart + ' |' + ascPart + '|\r\n';
+            }
+            const remaining = buf.length - fullRows * 16;
+            this._hexPartial = remaining > 0 ? buf.slice(fullRows * 16) : null;
+            return out;
         },
 
         termToggleFullscreen() {
@@ -783,6 +842,7 @@ document.addEventListener('alpine:init', () => {
                 this.parity = data.parity || 'N';
                 this.stopbits = String(data.stopbits ?? 1);
                 this.flowcontrol = Boolean(data.flowcontrol);  // Convert 0/1 to boolean
+                this.uart1InvertRx = Boolean(data.uart1InvertRx);
 
                 // WiFi config (strings for x-model select compatibility)
                 this.wifiMode = String(data.wifiMode ?? 0);
@@ -903,6 +963,7 @@ document.addEventListener('alpine:init', () => {
                 parity: this.parity,
                 stopbits: parseInt(this.stopbits),
                 flowcontrol: this.flowcontrol ? 1 : 0,  // Convert boolean to 0/1
+                uart1InvertRx: this.uart1InvertRx ? 1 : 0,
 
                 // WiFi config
                 wifi_mode: parseInt(this.wifiMode),

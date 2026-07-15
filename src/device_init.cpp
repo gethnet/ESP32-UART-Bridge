@@ -143,13 +143,20 @@ void initMainUART(UartInterface* serial, Config* config, UsbInterface* usb) {
     // Initialize serial port with full configuration
     serial->begin(uartCfg, UART_RX_PIN, UART_TX_PIN);
 
+    // Apply hardware RX inversion if enabled (for reading inverted UART sources
+    // through the generic UART1 bridge — SBUS/F.Port on non-standard wiring, etc.)
+    if (config->uart1InvertRx) {
+        uart_set_line_inverse(UART_NUM_1, UART_SIGNAL_RXD_INV);
+    }
+
     // Log configuration
-    log_msg(LOG_INFO, "UART configured: %u baud, %s%c%s%s",
+    log_msg(LOG_INFO, "UART configured: %u baud, %s%c%s%s%s",
             config->baudrate,
             word_length_to_string(config->databits),
             parity_to_string(config->parity)[0],
             stop_bits_to_string(config->stopbits),
-            config->flowcontrol ? ", HW Flow Control" : "");
+            config->flowcontrol ? ", HW Flow Control" : "",
+            config->uart1InvertRx ? ", RX inverted" : "");
 
     log_msg(LOG_INFO, "Using DMA-accelerated UART");
 

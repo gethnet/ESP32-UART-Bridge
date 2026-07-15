@@ -153,6 +153,7 @@ typedef struct {
     uart_parity_t parity;
     uart_stop_bits_t stopbits;
     bool flowcontrol;
+    bool uart1InvertRx;  // Hardware-invert Device 1 RX line (D1_UART1 role only) — for reading inverted UART sources
     
     // WiFi settings
     String ssid;

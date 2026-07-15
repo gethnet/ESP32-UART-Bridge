@@ -229,16 +229,11 @@ void webserver_init(Config* config, SystemState* state) {
                                AwsEventType type, void *arg, uint8_t *data, size_t len) {
             if (type == WS_EVT_CONNECT) {
                 log_msg(LOG_INFO, "Terminal WS client #%u connected", client->id());
-                // Send buffered history to new client
-                TerminalBuffer* termBuf = TerminalBuffer::getInstance();
-                uint8_t histBuf[512];
-                size_t offset = 0;
-                size_t got;
-                while ((got = termBuf->readHistory(histBuf, sizeof(histBuf), offset)) > 0) {
-                    client->binary(histBuf, got);
-                    offset += got;
-                }
-                termBuf->resetWsReader();
+                // History replay disabled: sending the entire 32 KB ring buffer
+                // via chained client->binary() calls saturates the AsyncWebSocket
+                // mutex and triggers a spinlock assert panic under active streams.
+                // New clients pick up the stream from the moment of connect via poll().
+                TerminalBuffer::getInstance()->resetWsReader();
             } else if (type == WS_EVT_DISCONNECT) {
                 log_msg(LOG_INFO, "Terminal WS client #%u disconnected", client->id());
             } else if (type == WS_EVT_DATA) {
@@ -282,25 +277,26 @@ void webserver_stop() {
 }
 
 // Push terminal buffer data to connected WebSocket clients
+// Sends a single chunk per poll to keep the AsyncWebSocket mutex critical
+// section short — chained binaryAll() calls under high throughput (>~20 KB/s)
+// held the spinlock past the 600 µs limit and triggered a panic assert.
+// Scheduler polls fast enough (~50 Hz), so the buffer still drains.
 void terminal_ws_poll() {
-    if (!terminalWs || terminalWs->count() == 0) return;
+    if (!terminalWs) return;
+    // Clean dead clients first so we never touch stale pointers via binaryAll()
+    terminalWs->cleanupClients();
+    if (terminalWs->count() == 0) return;
 
     TerminalBuffer* termBuf = TerminalBuffer::getInstance();
     size_t avail = termBuf->available();
     if (avail == 0) return;
 
-    // Drain all available data in chunks
     uint8_t buf[512];
-    while (avail > 0) {
-        size_t toRead = min(avail, sizeof(buf));
-        size_t got = termBuf->readNew(buf, toRead);
-        if (got == 0) break;
+    size_t toRead = min(avail, sizeof(buf));
+    size_t got = termBuf->readNew(buf, toRead);
+    if (got > 0) {
         terminalWs->binaryAll(buf, got);
-        avail = termBuf->available();
     }
-
-    // Periodic cleanup of disconnected clients
-    terminalWs->cleanupClients();
 }
 
 // Drop terminal ring buffer history (called from web UI clear button)
