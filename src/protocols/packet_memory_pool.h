@@ -182,10 +182,13 @@ inline void ParsedPacket::free() {
     if (data) {
         if (pool) {
             pool->deallocate(data, allocSize);
-        } else {
+        } else if (allocSize > 0) {
             // Was allocated directly
             delete[] data;
         }
+        // allocSize == 0 (with pool == nullptr) is a sentinel meaning
+        // "the buffer is owned by someone else, don't free it here"
+        // (e.g. TerminalParser reuses a class-member buffer for zero-alloc hot path)
         data = nullptr;
         size = 0;
         allocSize = 0;

@@ -133,6 +133,12 @@ private:
     TerminalBuffer* termBuf;
     uint32_t bufferStartTime;
 
+    // Pre-allocated reusable buffer for parse output — avoids 200/sec new[]/delete[]
+    // in the hot path (5ms flush + high-throughput UART fragments the heap over time).
+    // Owned by the parser instance; freed with the parser when protocol changes.
+    // ParsedPacket points into this buffer with allocSize=0 (sentinel: don't free data).
+    uint8_t reusableData[MAX_CHUNK];
+
 public:
     TerminalParser() : bufferStartTime(0) {
         termBuf = TerminalBuffer::getInstance();
@@ -164,13 +170,15 @@ public:
         // Flush all available data (up to MAX_CHUNK)
         size_t chunkLen = std::min(avail, MAX_CHUNK);
 
-        // Create packet and copy data from ring buffer segments
+        // Create packet — data points into the class-owned reusable buffer,
+        // allocSize=0 tells ParsedPacket::free() to skip delete[] on it.
+        // (ParsedPacket[1] itself is still heap — small alloc, standard delete[])
         result.packets = new ParsedPacket[1];
         result.count = 1;
 
-        result.packets[0].data = new uint8_t[chunkLen];
+        result.packets[0].data = reusableData;
         result.packets[0].size = chunkLen;
-        result.packets[0].allocSize = chunkLen;
+        result.packets[0].allocSize = 0;  // sentinel: don't free — buffer is class-owned
         result.packets[0].format = DataFormat::FORMAT_RAW;
         result.packets[0].hints.keepWhole = true;
         result.packets[0].parseTimeMicros = micros();
@@ -179,16 +187,16 @@ public:
         size_t copied = 0;
         if (segments.first.size > 0) {
             size_t n = std::min((size_t)segments.first.size, chunkLen);
-            memcpy(result.packets[0].data, segments.first.data, n);
+            memcpy(reusableData, segments.first.data, n);
             copied += n;
         }
         if (copied < chunkLen && segments.second.size > 0) {
             size_t n = std::min((size_t)segments.second.size, chunkLen - copied);
-            memcpy(result.packets[0].data + copied, segments.second.data, n);
+            memcpy(reusableData + copied, segments.second.data, n);
         }
 
         // Tap: copy to terminal buffer for WebSocket streaming
-        termBuf->write(result.packets[0].data, chunkLen);
+        termBuf->write(reusableData, chunkLen);
 
         result.bytesConsumed = chunkLen;
         bufferStartTime = 0;

@@ -1051,14 +1051,6 @@
                                     <option value="3" x-show="$store.app.isCrsfActive">CRSF</option>
                                     <option value="4">Terminal</option>
                                 </select>
-                                <div x-show="$store.app.isTerminalActive">
-                                    <label class="checkbox-label" title="ANSI escape rendering via xterm.js (colors, cursor, etc.)">
-                                        <input type="checkbox" name="terminal_ansi"
-                                               x-model="$store.app.terminalAnsi"
->
-                                        <span>ANSI</span>
-                                    </label>
-                                </div>
                                 <div id="mavlink-routing-section" x-show="$store.app.showMavlinkRouting">
                                     <label class="checkbox-label" title="Routes messages by target System ID. Fallback: broadcast">
                                         <input type="checkbox" id="mavlink-routing" name="mavlink_routing"

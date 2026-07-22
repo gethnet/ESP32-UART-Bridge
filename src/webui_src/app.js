@@ -18,7 +18,7 @@ const TRACKED_FIELDS = [
     'wifiNetwork0Ssid', 'wifiNetwork0Pass', 'wifiNetwork1Ssid', 'wifiNetwork1Pass',
     'wifiNetwork2Ssid', 'wifiNetwork2Pass', 'wifiNetwork3Ssid', 'wifiNetwork3Pass',
     'wifiNetwork4Ssid', 'wifiNetwork4Pass',
-    'protocolOptimization', 'mavlinkRouting', 'terminalAnsi', 'sbusTimingKeeper',
+    'protocolOptimization', 'mavlinkRouting', 'sbusTimingKeeper',
     'device4TargetIP', 'device4TargetPort', 'device4SbusFormat',
     'device4AutoBroadcast', 'device4UdpTimeout', 'udpBatching',
     'device2OutRate', 'device3OutRate', 'device4OutRate', 'btSendRate', 'crsfFilter',
@@ -296,36 +296,36 @@ document.addEventListener('alpine:init', () => {
                 const text = (e.data instanceof ArrayBuffer)
                     ? new TextDecoder('utf-8', { fatal: false }).decode(e.data)
                     : e.data;
-                // Write only to the visible container to save event-loop time:
-                // ANSI on → xterm; ANSI off → _termLines rendered by <pre>.
-                if (this._xterm) {
-                    this._xterm.write(text);
-                } else {
-                    if (this._termPartial && this._termLines.length > 0 &&
-                        this._termLines[this._termLines.length - 1] === this._termPartial) {
-                        this._termLines.pop();
-                    }
-                    const lines = text.split('\n');
-                    for (let i = 0; i < lines.length; i++) {
-                        if (i === 0 && this._termPartial) {
-                            this._termPartial += lines[i];
-                            if (lines.length > 1) {
-                                if (this._termPartial.length > 0) this._termLines.push(this._termPartial);
-                                this._termPartial = '';
-                            }
-                        } else if (i < lines.length - 1) {
-                            if (lines[i].length > 0) this._termLines.push(lines[i]);
-                        } else {
-                            this._termPartial = lines[i];
+                // Write to BOTH containers so data survives async xterm init
+                // and ANSI on↔off toggles without gaps (v2.20.1 attempted to write
+                // only to the visible one for perf — but that hid data in ANSI mode
+                // when xterm was mid-init or when the dispose/reinit race left the
+                // reference stale).
+                if (this._termPartial && this._termLines.length > 0 &&
+                    this._termLines[this._termLines.length - 1] === this._termPartial) {
+                    this._termLines.pop();
+                }
+                const lines = text.split('\n');
+                for (let i = 0; i < lines.length; i++) {
+                    if (i === 0 && this._termPartial) {
+                        this._termPartial += lines[i];
+                        if (lines.length > 1) {
+                            if (this._termPartial.length > 0) this._termLines.push(this._termPartial);
+                            this._termPartial = '';
                         }
-                    }
-                    if (this._termPartial) {
-                        this._termLines.push(this._termPartial);
-                    }
-                    while (this._termLines.length > this._termMaxLines) {
-                        this._termLines.shift();
+                    } else if (i < lines.length - 1) {
+                        if (lines[i].length > 0) this._termLines.push(lines[i]);
+                    } else {
+                        this._termPartial = lines[i];
                     }
                 }
+                if (this._termPartial) {
+                    this._termLines.push(this._termPartial);
+                }
+                while (this._termLines.length > this._termMaxLines) {
+                    this._termLines.shift();
+                }
+                if (this._xterm) this._xterm.write(text);
             };
             ws.onopen = () => { this._termWs = ws; };
             ws.onclose = () => {
@@ -525,8 +525,12 @@ document.addEventListener('alpine:init', () => {
                 fontFamily: "'Consolas', 'Courier New', monospace",
                 theme: { background: '#1e1e1e' }
             });
-            // In view-only mode, Ctrl+C / Ctrl+Insert copy selection, Ctrl+A selects all.
-            // In input mode, pass through so Ctrl+C goes to UART as SIGINT (\x03).
+            // In view-only mode: Ctrl+C / Ctrl+Insert copy selection, Ctrl+A selects all,
+            // all other Ctrl+... pass to the browser (Ctrl+R reload, Ctrl+F find, etc.) —
+            // xterm.js would otherwise preventDefault on them, and in fullscreen the
+            // terminal always has focus so those browser shortcuts stopped working.
+            // In input mode, pass everything through so xterm behaves as a full terminal
+            // (Ctrl+C → SIGINT \x03 to UART, Ctrl+R → \x12 for bash reverse history, etc.)
             this._xterm.attachCustomKeyEventHandler(e => {
                 if (!this.termInputEnabled && e.type === 'keydown' && e.ctrlKey && !e.shiftKey && !e.altKey) {
                     if (e.key === 'c' || e.key === 'Insert') {
@@ -540,6 +544,7 @@ document.addEventListener('alpine:init', () => {
                         this._xterm.selectAll();
                         return false;
                     }
+                    return false;  // any other Ctrl+... in view-only → let the browser handle it
                 }
                 return true;
             });
@@ -870,7 +875,6 @@ document.addEventListener('alpine:init', () => {
                 // Protocol (convert to string for x-model select compatibility)
                 this.protocolOptimization = String(data.protocolOptimization ?? 0);
                 this.mavlinkRouting = data.mavlinkRouting ?? false;
-                this.terminalAnsi = data.terminalAnsi ?? false;
                 this.sbusTimingKeeper = data.sbusTimingKeeper ?? false;
 
                 // Log levels (convert to string for x-model select compatibility)
@@ -986,7 +990,6 @@ document.addEventListener('alpine:init', () => {
                 // Protocol
                 protocol_optimization: parseInt(this.protocolOptimization),
                 mavlink_routing: this.mavlinkRouting,
-                terminal_ansi: this.terminalAnsi,
                 udp_batching: this.udpBatching,
 
                 // Log levels

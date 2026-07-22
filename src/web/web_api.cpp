@@ -215,7 +215,6 @@ static void populateApiConfig(JsonDocument& doc) {
     doc["protocolOptimization"] = config.protocolOptimization;
     doc["udpBatchingEnabled"] = config.udpBatchingEnabled;
     doc["mavlinkRouting"] = config.mavlinkRouting;
-    doc["terminalAnsi"] = config.terminalAnsi;
 
     // Log display count
     doc["logDisplayCount"] = LOG_DISPLAY_COUNT;
@@ -748,15 +747,6 @@ void handleSaveJson(AsyncWebServerRequest *request) {
             config.mavlinkRouting = newVal;
             configChanged = true;
             log_msg(LOG_INFO, "MAVLink routing: %s", newVal ? "enabled" : "disabled");
-        }
-    }
-
-    if (doc.containsKey("terminal_ansi")) {
-        bool newVal = doc["terminal_ansi"];
-        if (newVal != config.terminalAnsi) {
-            config.terminalAnsi = newVal;
-            configChanged = true;
-            log_msg(LOG_INFO, "Terminal ANSI: %s", newVal ? "enabled" : "disabled");
         }
     }
 
