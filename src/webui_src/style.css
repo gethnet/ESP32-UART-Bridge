@@ -551,6 +551,36 @@ pre {
     stroke: #ccc;
 }
 
+/* Record button — inactive: grey dot; recording: red dot pulsing. Time display shown only while recording. */
+.term-rec-btn {
+    color: #888;
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 12px;
+    font-weight: bold;
+    line-height: 1;
+}
+.term-rec-btn.recording {
+    color: #e06c75;
+    animation: rec-pulse 1.2s ease-in-out infinite;
+}
+.term-rec-time {
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 11px;
+    color: #d4d4d4;
+    background: rgba(60, 60, 60, 0.9);
+    padding: 4px 6px;
+    border-radius: 3px;
+    display: inline-flex;
+    align-items: center;
+}
+.term-rec-time.warn {
+    color: #e5c07b;
+}
+@keyframes rec-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+}
+
 /* Terminal fullscreen mode */
 .term-fullscreen {
     position: fixed;

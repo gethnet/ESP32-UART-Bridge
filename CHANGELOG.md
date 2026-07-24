@@ -1,5 +1,18 @@
 # CHANGELOG
 
+## v2.21.0
+
+### Terminal
+- **Binary recording (sniffer mode)**: new `●` button in the terminal header captures the raw WebSocket byte stream into a `.bin` file for offline analysis (unknown protocols, reverse engineering, regression samples). Complements the hex view — same source, different consumer
+  - **Client-side only**, no ESP change. Piggybacks on the existing `/ws/terminal` binary stream
+  - **Event-driven** via `ws.onmessage` (not `setInterval`) — a hidden/minimised tab keeps recording without loss, only the UI timer is background-throttled (cosmetic)
+  - **Independent of visual mode**: text / hex / ANSI are just renderers of the same stream; recording pushes raw `Uint8Array` chunks before any formatting. Toggling text↔hex↔ANSI or collapsing the terminal mid-recording doesn't affect the file
+  - **Independent of Clear**: Clear only wipes the visual buffer, recording continues
+  - **Auto-stop safety**: 50 MB hard cap (25 MB soft warning turns the badge orange) or 1 hour hard cap, whichever trips first — triggers the save dialog automatically. User may Cancel there if the file isn't needed
+  - **`beforeunload` guard** warns if the tab is closed mid-recording (data would be lost otherwise)
+  - **Available only in Terminal protocol optimization mode** — that's where `/ws/terminal` is active
+  - **Note**: Chromium-based browsers show an "Insecure download blocked" prompt on the ESP's HTTP page for `.bin` downloads — click **Keep**, disable `chrome://flags/#insecure-downloads-warning`, or use Firefox. Documented in README and help
+
 ## v2.20.1
 
 ### Stability

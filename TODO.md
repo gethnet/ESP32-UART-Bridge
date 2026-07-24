@@ -11,66 +11,30 @@
   - List of client IP addresses
   - IP of current web interface user
 
-- [x] **Terminal protocol optimization** (v2.19.0)
-  - [x] `terminal_parser` — raw with 5ms flush timeout, taps data to ring buffer (PSRAM 32KB / internal 4KB)
-  - [x] WebSocket `/ws/terminal` with history replay on connect
-  - [x] Web UI: collapsible terminal window, save/copy/clear buttons, fullscreen mode
-  - [x] ANSI rendering via xterm.js + fit addon (dynamic toggle, lazy load)
-  - [x] Web input: keyboard toggle button → xterm onData → WebSocket → UART TX
-  - [ ] Phase 3: dynamic UDP connect button near terminal window (non-persistent, applies on the fly)
-  - [ ] Phase 4: configurable pattern matching → status badges (e.g. `login:` → Ready)
-  - [x] Phase 5: **Hex view mode** (v2.20.1) — third toggle (`0x` button) alongside ANSI on/off, hexdump-style output for diagnosing unknown/misparsed protocols
+- [ ] **Dynamic UDP connect button in terminal window** 🔵 LOW — add a small connect widget near the terminal (target IP + port fields, connect/disconnect toggle) that opens a UDP session on the fly without touching the persistent Device 4 config. Useful for quick one-off inspection sessions.
 
-- [ ] **Frontend JS libraries upgrade** — deferred until current backend stability is confirmed (post-lib-upgrade v2.20.2+)
-  - **Alpine.js + plugins**: `3.15.8 → 3.15.12` (all three: `alpinejs`, `@alpinejs/persist`, `@alpinejs/collapse` — must upgrade together, plugins have to match core version)
-    - Only patch fixes, no breaking changes: `x-for` crashes on `Object.groupBy()` results, `@teleport` memory leaks (we don't use), `x-model` bugs, CSP compat, x-anchor cleanups
-    - Update `src/webui_src/lib/versions.json` alongside the .min.js files
-    - Low risk — patch bump only
-  - **xterm.js + fit addon**: `5.5.0 → 6.x` — **wait for 6.0.1 release** before upgrading (see below)
-    - **6.0.0 released 2025-12-22**; 7+ months of activity in master (~30 commits) but no 6.0.1 tag yet
-    - Important fixes already in master, NOT in 6.0.0:
-      - **UTF-8 continuation drop** (#6003/#6004) — codepoint lost when `write(Uint8Array)` splits a UTF-8 sequence at 0x80 boundary. Relevant to us: we push WS binary → `TextDecoder('utf-8', {fatal:false})` → potential silent byte loss
-      - **WriteBuffer setTimeout on dispose** (#5936) — memory leak fix. Relevant: we dispose/reinit xterm on every ANSI toggle
-      - Selection drag-scroll clamp (#5993), clear at cursor home (#5992)
-    - Fixes NOT relevant to us (WebGL renderer, clipboard addon, image addon) — we use default DOM renderer, none of these addons
-    - Open bugs mostly non-relevant (Safari-specific, WebGL, image addon)
-    - **Wins after 6.0.1**: memory improvements at dispose (main reason to upgrade), synchronized output DEC 2026, UTF-8 correctness
-    - **Breaking changes to review** (already present in 6.0.0):
-      - Removed alt-to-ctrl+arrow mapping (may affect users relying on Alt+arrow in shell)
-      - Viewport/scrollbar reorg — visually retest scroll, fullscreen, fit resize
-      - Requires simultaneous upgrade of `xterm-addon-fit` 0.10.0 → matching version
-    - **Retest checklist** on xterm upgrade:
-      - ANSI escape rendering (colors, cursor positioning, CSI sequences)
-      - Input mode keyboard: printable, arrows, Ctrl+letters, Alt+letters, F-keys, Escape, Tab
-      - `attachCustomKeyEventHandler` still fires with same event shape
-      - `_xterm.selectAll()` / `getSelection()` / `write(text)` API unchanged
-      - fit addon still resizes on fullscreen toggle
-  - **Order**: Alpine patch bump can go early — as soon as current backend upgrade soaks for a few hours (safe patches only, no breaking changes). xterm major bump waits for longer soak after Alpine lands. Do NOT bundle with backend library upgrade — if something breaks, blame stays clear
+- [ ] **xterm.js + fit addon upgrade** `5.5.0 → 6.x` — **wait for 6.0.1 release** before upgrading
+  - **6.0.0 released 2025-12-22**; activity in master (~30 commits) but no 6.0.1 tag yet
+  - Important fixes already in master, NOT in 6.0.0:
+    - **UTF-8 continuation drop** (#6003/#6004) — codepoint lost when `write(Uint8Array)` splits a UTF-8 sequence at 0x80 boundary. Relevant to us: we push WS binary → `TextDecoder('utf-8', {fatal:false})` → potential silent byte loss
+    - **WriteBuffer setTimeout on dispose** (#5936) — memory leak fix. Relevant: we dispose/reinit xterm on every ANSI toggle
+    - Selection drag-scroll clamp (#5993), clear at cursor home (#5992)
+  - Fixes NOT relevant to us (WebGL renderer, clipboard addon, image addon) — we use default DOM renderer, none of these addons
+  - **Wins after 6.0.1**: memory improvements at dispose (main reason to upgrade), UTF-8 correctness
+  - **Breaking changes to review** (already present in 6.0.0):
+    - Removed alt-to-ctrl+arrow mapping (may affect users relying on Alt+arrow in shell)
+    - Viewport/scrollbar reorg — visually retest scroll, fullscreen, fit resize
+    - Requires simultaneous upgrade of `xterm-addon-fit` 0.10.0 → matching version
+  - **Retest checklist** on xterm upgrade:
+    - ANSI escape rendering (colors, cursor positioning, CSI sequences)
+    - Input mode keyboard: printable, arrows, Ctrl+letters, Alt+letters, F-keys, Escape, Tab
+    - `attachCustomKeyEventHandler` still fires with same event shape
+    - `_xterm.selectAll()` / `getSelection()` / `write(text)` API unchanged
+    - fit addon still resizes on fullscreen toggle
 
-- [ ] **Binary recording (sniffer mode)** — record raw UART stream into a `.bin` file for offline analysis (unknown protocols, reverse engineering, regression samples). Complement to hex view.
-  - **Available only in Terminal protocol optimization mode** — that's the only mode where `/ws/terminal` is active. In other modes (Raw / MAVLink / SBUS / CRSF) parsers don't tap into TerminalBuffer, WS is silent or absent. Record button must be shown/enabled only when Terminal mode is selected AND WS is connected.
-  - **Future extension** (out of scope for v1): tap the `raw_parser` into TerminalBuffer too, so users can pick Raw mode for generic sniffing of any protocol. Requires ESP-side change (PSRAM buffer allocation + parser tap).
-  - **Architecture: client-side only.** No changes on ESP. Piggyback on the existing `/ws/terminal` binary stream.
-  - **Event-driven, not timer-driven** — `ws.onmessage` handler pushes `Uint8Array` chunks into an array. WebSocket message events are NOT subject to background-tab throttling (unlike `setInterval`), so a hidden/minimised tab keeps recording without data loss.
-  - **Flow**:
-    1. Record button toggles `recording` flag
-    2. While `recording`: every incoming WS binary message → `recChunks.push(new Uint8Array(await evt.data.arrayBuffer()))`
-    3. Stop button → `new Blob(recChunks, {type: 'application/octet-stream'})` → `URL.createObjectURL` → invisible `<a download>` click → `setTimeout(1500, revokeObjectURL)` for cleanup
-    4. Filename: `terminal_${new Date().toISOString().replace(/[:.]/g, '-')}.bin`
-  - **UI**: single button next to hex view (`● REC` / `■ STOP`), small time display `MM:SS` next to it. Button disabled when WS not connected. Timer `setInterval(1s)` for the display IS throttled in background — that's fine, it's cosmetic, data collection continues via WS events.
-  - **Format**: pure raw bytes, 1:1 with UART. No timestamps, no PCAP. User picks their own analysis tool (hex editor, Python, Wireshark with custom dissector).
-  - **Auto-stop safety limits** — user may forget the recording is on; browser RAM fills up over time. Whichever limit trips first stops recording AND auto-saves the file (never silently drop data):
-    - **Size cap: 50 MB hard stop** (soft warning at 25 MB — badge turns orange). UART throughput varies (9600 → 1 KB/s, 921600 → 100 KB/s), so size is the meaningful bound
-    - **Time cap: 1 hour hard stop** — trickle-rate protection for slow UART where 50 MB is never reached
-    - On auto-stop: show notification "Recording auto-stopped at <limit>", file saved automatically with same filename convention
-  - **Edge cases to handle**:
-    - WS reconnect mid-recording — history replay from ESP ring buffer will re-inject last 32KB, causing duplicated bytes in the output. Either accept as known limitation or set a `justReconnected` flag to skip first replay burst
-    - Clear button pressed while recording — ask "stop recording first?" (Clear doesn't affect recording state, but user may expect it to)
-    - Tab close mid-recording — data lost. Add `beforeunload` handler when recording is active to warn user
-  - **Works on all boards** (no PSRAM requirement — all client-side).
-  - Estimate: ~1 hour, ~30-50 lines of JS in `app.js` + one button + one span in `index.html`
+- [ ] **Migrate status/logs/crash polling to WebSocket** 🟡 LOW-MEDIUM — most of the web UI still polls `/api/status`, `/api/crashlog_json`, log fetches on `setInterval` (~5s each). Same pattern as `/ws/terminal` — one persistent WS pushes updates when they happen. Wins: less HTTP+mDNS churn (fewer stale-DNS glitches, one resolve per session vs one per poll), no background-tab throttling, near-real-time UI. Cost: new endpoint + server-side broadcaster + client subscribe/reconnect logic; REST endpoints stay for external tools (MP plugin, curl). Not urgent — polling works fine; do when there's a specific reason (e.g. real-time telemetry in UI).
 
-- [ ] **pioarduino platform upgrade** — deferred, unpin only after both boards test clean (separate step, AFTER Alpine + xterm are stable)
+- [ ] **pioarduino platform upgrade** — deferred, unpin only after both boards test clean (separate step, AFTER xterm 6.x lands and soaks)
   - Currently frozen at `55.03.35` (Arduino 3.3.5 / ESP-IDF 5.5.1) — see "Known Issues & Warnings" section for the original BLE BTDM regression that caused the pin
   - Target: `55.03.38-1` (Arduino 3.3.8 / ESP-IDF 5.5.4) — ESP-IDF 5.5.3 shipped fixes matching our symptoms (`Fixed crash in btdm_controller_task on ESP32`, `Fixed scan HCI command timeout issue on ESP32`), 5.5.4 closes a NimBLE host regression from 5.5.3
   - **Migration approach**: use conditional compilation on `ESP_ARDUINO_VERSION` so the code compiles cleanly on BOTH the old (3.3.5) and the new (3.3.8) platform. Lets us flip `platformio.ini` between versions for A/B testing without editing source. Remove the `#ifdef` guards after 2-3 months of stable operation on 3.3.8 (e.g. v2.20.2 → v2.20.5).
@@ -214,11 +178,6 @@
     - D4 binary (format=0) also needs rate control — currently only text format (format=1) has it
     - Reuse existing rate selector UI (10-70 Hz)
 
-### Pre-release Testing
-
-- [ ] **MAVLink RC Monitor** — test RC channel bars with real MAVLink traffic (msg 65 RC_CHANNELS, msg 70 RC_CHANNELS_OVERRIDE)
-- [ ] **Terminal protocol** — test WebSocket terminal with UART device (e.g. RPi console)
-
 ### Future Considerations (Low Priority)
 
 #### Platform Testing (waiting for hardware)
@@ -294,6 +253,37 @@
     - If CTS is LOW → assume device connected and holding CTS
   - Not 100% reliable (CTS LOW could mean "not connected but grounded" or "connected, wait")
   - Low priority: UI checkbox now works correctly, users can disable manually
+
+- [ ] **TX line inversion (per-device)** 🟢 SMALL — mirror the existing RX inversion added in v2.20.1 for the TX direction. Enables full raw-passthrough of inverted UART protocols without going through a protocol-specific role.
+  - **Scope**: any physical UART where our current RX invert applies. Start with Device 1 UART1 (matches the existing `uart1InvertRx` field), extend to Device 3 UART3 later if a use case appears
+  - **Not for protocol roles** — CRSF / SBUS / etc. already handle their protocol-defined inversion internally; TX invert flag is meaningful only for raw UART roles (D1_UART1, D3_UART3)
+  - **Not for USB** — the USB-CDC transport has no line-inversion concept
+  - **Implementation** (mirrors [[uart1InvertRx]] from v2.20.1):
+    - `Config.uart1InvertTx` bool field in `device_types.h` + load / save in `config.cpp` + GET / POST in `web_api.cpp`
+    - In `device_init.cpp` D1_UART1 init: OR `UART_SIGNAL_TXD_INV` into the `uart_set_line_inverse()` mask alongside the existing RX flag
+    - `Invert TX` checkbox next to `Invert RX` in UART Configuration (index.html + app.js state + TRACKED_FIELDS)
+    - Log line includes ", TX inverted" suffix, same style as RX
+  - Estimate: ~1 hour, mostly boilerplate along the existing RX-invert path
+
+- [ ] **Half-duplex single-wire mode (per-device)** 🟡 MEDIUM-LARGE — one physical pin serves both TX and RX, direction toggled in software. Enables true single-wire bidirectional transports without splitting into two GPIOs.
+  - **Use cases** (not exhaustive): CRSF / ELRS proper spec compliance (currently we run CRSF in full-duplex which only works with modified receivers), SmartAudio VTX control, DShot ESC telemetry, RS485-style single-line buses, any bidirectional protocol that shares a wire between two endpoints
+  - **Scope**: per-device, offered as a checkbox on roles running on physical UARTs (D1_UART1, D1_CRSF_IN, D3_UART3, D3_SBUS_OUT etc.). For CRSF the flag could default to ON in a later iteration since the spec mandates single-wire, but leave it explicit for v1
+  - **Not for USB** — half-duplex has no meaning on USB-CDC
+  - **Config**: `Config.deviceNHalfDuplex` per-device bool (or a `line_mode` enum if we later add more line modes like RS485-with-DE-pin); orthogonal to the role selection
+  - **Implementation outline** (this is an architectural change, not a one-line flag):
+    1. **Pin binding**: at init, route the UART's TX and RX signals to the SAME GPIO through the GPIO matrix (`esp_rom_gpio_connect_out_signal` for TX + `esp_rom_gpio_connect_in_signal` for RX), and start the pad in `GPIO_MODE_INPUT` (hi-Z, line released)
+    2. **Direction management** in the pipeline sender for that device:
+       - Before writing bytes: switch pad to `GPIO_MODE_OUTPUT`, set drive capability to `GPIO_DRIVE_CAP_3` (single-wire buses are often shared with other pull-down sources, weak drive sags the HIGH level near the receiver's VIH threshold), reattach TX signal through the matrix (direction change detaches it)
+       - Feed bytes to `uart_write_bytes()` as usual
+       - After the last byte: `uart_wait_tx_done()` to drain the shift register, then `uart_flush_input()` to discard the echo the peripheral captured of our own TX, then switch pad back to `GPIO_MODE_INPUT` (release)
+    3. **Line inversion** (if the protocol needs it, e.g. CRSF): keep RX invert on the peripheral (`uart_set_line_inverse(UART_SIGNAL_RXD_INV)`), apply TX invert through the GPIO matrix `inv_out` flag in `esp_rom_gpio_connect_out_signal(..., true, false)` when reattaching each burst. **Do not double-invert** by setting both — peripheral TXD invert + matrix invert cancel out
+    4. **Gap detection**: a release-when-idle policy (e.g. no TX bytes for ~300 µs → release the pad). Tune per protocol — CRSF frames are compact, SmartAudio has different cadence
+    5. **RX gating**: read RX only while the pad is released (hi-Z). While driving, RX bytes are our own echo — discard
+    6. **Standard-UART fallback stays intact**: `halfDuplex == false` uses the current full-duplex code path unchanged, no regressions
+  - **Not this**: ESP-IDF's `UART_MODE_RS485_HALF_DUPLEX` — it uses a separate DE (driver enable) pin, doesn't tri-state the actual TX pad. Not what we need for true single-wire
+  - **Testing** is the hard part — half-duplex fails subtly: RX enable one bit too early captures the tail of our own TX as an echo frame; too late misses the first byte of the reply. Need real bidirectional hardware in the loop (CRSF RX + telemetry, or SmartAudio VTX + response)
+  - **Do not ship blind** — hold until we have a concrete use case on hand with test hardware. Design the config field and pipeline hooks now so the feature can drop in later without touching unrelated code
+  - Estimate: several days of implementation + a soak cycle with real hardware for tuning
 
 #### Memory Optimization (MiniKit) 🔵 LOW PRIORITY
 

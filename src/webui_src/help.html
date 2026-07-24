@@ -28,7 +28,9 @@
                     <li><strong>SBUS</strong> - Multi-source failover, WiFi transport with UDP batching</li>
                     <li><strong>CRSF/ELRS</strong> - RC channels + telemetry, text/binary output via USB, UART, UDP, BLE</li>
                     <li><strong>MAVLink</strong> - Zero-latency forwarding, multi-GCS routing, priority transmission</li>
-                    <li><strong>Terminal</strong> - Web serial console with xterm.js ANSI rendering, keyboard input, and hex dump view for raw byte inspection</li>
+                    <li><strong>Terminal</strong> - Web serial console with xterm.js ANSI rendering, keyboard input, hex dump view for raw byte inspection, and binary recording (● REC button) that saves the raw UART stream to a <code>.bin</code> file for offline analysis (unknown protocols, reverse engineering). Auto-stops at 50 MB or 1 hour.
+                        <br><small style="color:#888">Note: Chromium-based browsers show an "Insecure download blocked" prompt on HTTP pages — click <em>Keep</em> to accept, or disable <code>chrome://flags/#insecure-downloads-warning</code>. Firefox has no such prompt.</small>
+                    </li>
                     <li><strong>Raw Mode</strong> - Timing-based packet detection for unknown protocols</li>
                 </ul>
                 <p><strong>Compatible with:</strong> SBUS (RC), CRSF/ELRS (RC), MAVLink (drones), NMEA (GPS), Modbus RTU, AT Commands, and any UART-based protocol.</p>

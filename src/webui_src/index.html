@@ -145,6 +145,16 @@
                               :style="$store.app.termHexMode ? 'color:#e5c07b' : 'color:#888'">
                             <span style="font-family:monospace;font-size:11px;font-weight:bold;letter-spacing:-1px">0x</span>
                         </span>
+                        <!-- Binary recording: capture raw WS stream into a .bin file (client-side, no ESP change).
+                             Time display appears only while recording; auto-stops at size/time limits. -->
+                        <span @click="$store.app.termToggleRecord()" class="term-btn"
+                              :title="$store.app.recording ? 'Stop recording and save file' : 'Record raw binary stream to file'">
+                            <span class="term-rec-btn" :class="{ recording: $store.app.recording }">&#9679;</span>
+                        </span>
+                        <span x-show="$store.app.recording"
+                              class="term-rec-time"
+                              :class="{ warn: $store.app.recBytes >= 25 * 1024 * 1024 }"
+                              x-text="$store.app.recTimeStr + ' / ' + $store.app._recFmtSize($store.app.recBytes)"></span>
                         <span @click="$store.app.termToggleFullscreen()" class="term-btn" title="Toggle fullscreen">
                             <svg x-show="!$store.app.termFullscreen" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="#888" stroke-width="1.5">
                                 <path d="M3 7V3h4M13 3h4v4M17 13v4h-4M7 17H3v-4"></path>

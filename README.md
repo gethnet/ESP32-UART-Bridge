@@ -25,7 +25,7 @@ Flash firmware directly from your browser — no tools required (Chrome/Edge onl
   - **SBUS**: Multi-source failover, WiFi transport with UDP batching
   - **CRSF/ELRS**: RC channel + telemetry parsing, text/binary output via USB, UART, UDP, BLE
   - **MAVLink**: Zero-latency packet forwarding, multi-GCS routing, priority-based transmission
-  - **Terminal**: Web serial console with xterm.js — ANSI colors, keyboard input, fullscreen mode, hex dump view for diagnostics
+  - **Terminal**: Web serial console with xterm.js — ANSI colors, keyboard input, fullscreen mode, hex dump view for diagnostics, and binary recording to `.bin` file for offline analysis (auto-stops at 50 MB / 1 hour)
   - **Raw Mode**: Adaptive buffering for unknown protocols
 - **High Performance**: DMA-accelerated UART with adaptive buffering (256-2048 bytes based on baud rate)
 - **USB Host/Device Modes**:
@@ -601,6 +601,8 @@ The ESP32-S3's native USB implementation outputs bootloader messages when DTR/RT
   - Keyboard input from browser to UART (login, shell commands, interactive apps)
   - Fullscreen mode, save/copy/clear, history replay on reconnect
   - **Hex dump view** (`0x` toggle) — inspect raw bytes for unknown protocols, mismatched baud, framing issues
+  - **Binary recording** (`●` toggle) — captures the raw UART stream (independent of the visual mode) into a `.bin` file for offline analysis in a hex editor, Python, Wireshark with custom dissector, etc. Auto-stops at 50 MB or 1 hour, whichever comes first
+    - Chromium-based browsers (Chrome, Edge, Brave, Opera) show an **"Insecure download blocked"** prompt on the ESP's HTTP page — click **Keep** to accept, or disable `chrome://flags/#insecure-downloads-warning` once to skip the prompt permanently. Firefox has no such prompt
   - Use case: headless Raspberry Pi, routers, embedded Linux diagnostics over WiFi
 - **GPS/NMEA**: Most GPS modules use 9600 or 115200 baud (use RAW mode for timing-based optimization)
 - **AT command modems**: May require specific line endings (CR, LF, or CR+LF) (use RAW mode)

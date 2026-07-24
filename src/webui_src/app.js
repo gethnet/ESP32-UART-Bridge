@@ -270,12 +270,32 @@ document.addEventListener('alpine:init', () => {
         termHexMode: false,      // Show incoming bytes as hexdump instead of text
         _hexPartial: null,       // Accumulator for incomplete 16-byte row (Uint8Array)
 
+        // Binary recording (sniffer mode): capture raw WS binary stream into a .bin file.
+        // Client-side only — chunks accumulate in RAM until user stops or a safety limit trips.
+        // Event-driven via ws.onmessage (not setInterval) so a hidden/minimised tab keeps
+        // recording without loss; only the UI timer is throttled in background, that's cosmetic.
+        recording: false,
+        recChunks: [],           // Array of Uint8Array, one per WS binary message
+        recBytes: 0,             // Total captured bytes (matches Blob size at save time)
+        recStartMs: 0,           // Date.now() at recording start, for elapsed time display
+        recTimer: null,          // setInterval handle for UI tick (1 Hz)
+        recTimeStr: '00:00',     // MM:SS display for the toolbar
+        _REC_SIZE_HARD: 50 * 1024 * 1024,   // 50 MB — hard stop + auto-save
+        _REC_SIZE_WARN: 25 * 1024 * 1024,   // 25 MB — orange badge in the toolbar
+        _REC_TIME_HARD: 3600 * 1000,        // 1 hour — hard stop for slow-trickle UART where size never reaches limit
+
         termConnect() {
             if (this._termWs) return;
             const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
             const ws = new WebSocket(`${proto}//${location.host}/ws/terminal`);
             ws.binaryType = 'arraybuffer';
             ws.onmessage = (e) => {
+                // Binary recording tap: capture raw bytes into chunks array before any
+                // formatting — recording is independent of visual mode (text / hex / ANSI).
+                // WS message events aren't subject to background-tab throttling.
+                if (this.recording && e.data instanceof ArrayBuffer) {
+                    this._recPushChunk(e.data);
+                }
                 // Hex view: format raw bytes as hexdump (XX XX XX ...  |ascii|)
                 // Bypasses text decoding entirely — shows exact wire bytes.
                 if (this.termHexMode && e.data instanceof ArrayBuffer) {
@@ -433,6 +453,102 @@ document.addEventListener('alpine:init', () => {
             const remaining = buf.length - fullRows * 16;
             this._hexPartial = remaining > 0 ? buf.slice(fullRows * 16) : null;
             return out;
+        },
+
+        // Toggle binary recording of the raw WS stream. Start: reset chunks + timer.
+        // Stop: build a Blob from chunks, download as .bin, clean up.
+        termToggleRecord() {
+            if (this.recording) {
+                this._saveRecording('user');
+            } else {
+                this.recChunks = [];
+                this.recBytes = 0;
+                this.recStartMs = Date.now();
+                this.recTimeStr = '00:00';
+                this.recording = true;
+                this.recTimer = setInterval(() => this._recTick(), 1000);
+            }
+        },
+
+        // Append one WS binary message to the recording buffer, check the size limit.
+        // The Uint8Array view over the incoming ArrayBuffer is safe to keep — WS delivers
+        // a fresh buffer per message and no one else holds a reference.
+        _recPushChunk(arrayBuffer) {
+            const bytes = new Uint8Array(arrayBuffer);
+            this.recChunks.push(bytes);
+            this.recBytes += bytes.length;
+            if (this.recBytes >= this._REC_SIZE_HARD) {
+                this._saveRecording('size');
+            }
+        },
+
+        // 1 Hz UI tick — updates the MM:SS display and enforces the time limit.
+        // Throttled in background tabs (up to ~1/min), but that only stales the display;
+        // the recording itself keeps going via WS events, and size limit still trips.
+        _recTick() {
+            const elapsedMs = Date.now() - this.recStartMs;
+            const s = Math.floor(elapsedMs / 1000);
+            this.recTimeStr = String(Math.floor(s / 60)).padStart(2, '0') + ':' +
+                              String(s % 60).padStart(2, '0');
+            if (elapsedMs >= this._REC_TIME_HARD) {
+                this._saveRecording('time');
+            }
+        },
+
+        // Finalize recording: build Blob → trigger download → reset state.
+        // Reason: 'user' | 'size' | 'time'. Auto-stop reasons show a notification.
+        _saveRecording(reason) {
+            if (!this.recording) return;
+            this.recording = false;
+            if (this.recTimer) {
+                clearInterval(this.recTimer);
+                this.recTimer = null;
+            }
+            if (this.recChunks.length > 0) {
+                // Chromium-based browsers prompt "Insecure download blocked" on HTTP pages
+                // for .bin / octet-stream downloads — that's browser policy, not something
+                // we can bypass in code without semantic lies (fake MIME / extension).
+                // User workarounds are documented in help.html: click Keep in the prompt,
+                // toggle chrome://flags/#insecure-downloads-warning, or use Firefox.
+                const blob = new Blob(this.recChunks, { type: 'application/octet-stream' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'terminal_' + new Date().toISOString().replace(/[:.]/g, '-') + '.bin';
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                setTimeout(() => URL.revokeObjectURL(url), 1500);
+            }
+            this.recChunks = [];
+            this.recBytes = 0;
+            if (reason === 'size' || reason === 'time') {
+                const msg = reason === 'size'
+                    ? 'Recording auto-stopped: 50 MB size limit reached'
+                    : 'Recording auto-stopped: 1 hour time limit reached';
+                this._recShowToast(msg);
+            }
+        },
+
+        // Transient toast notification for auto-stop events (orange to signal warning).
+        // Kept local to recording — the terminal's toolbar is where the user is looking.
+        _recShowToast(message) {
+            const el = document.createElement('div');
+            el.textContent = message;
+            el.style.cssText = 'position: fixed; top: 20px; right: 20px; background: #e5c07b; color: #1e1e1e; padding: 12px 20px; border-radius: 4px; z-index: 10000; font-size: 14px; box-shadow: 0 2px 8px rgba(0,0,0,0.2);';
+            document.body.appendChild(el);
+            setTimeout(() => {
+                el.style.opacity = '0';
+                el.style.transition = 'opacity 0.3s';
+                setTimeout(() => document.body.removeChild(el), 300);
+            }, 3500);
+        },
+
+        // Format bytes as "X.X MB" / "X.X KB" for the toolbar display.
+        _recFmtSize(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
         },
 
         termToggleFullscreen() {
@@ -2178,7 +2294,15 @@ document.addEventListener('alpine:initialized', () => {
 });
 
 // Cleanup on page unload
-window.addEventListener('beforeunload', () => {
+window.addEventListener('beforeunload', (e) => {
+    // Warn if binary recording is in progress — closing the tab discards the buffered chunks.
+    // Modern browsers show a generic "Leave site?" prompt; the actual returnValue text is
+    // ignored but the property must be set for the prompt to appear at all.
+    const app = Alpine.store('app');
+    if (app && app.recording) {
+        e.preventDefault();
+        e.returnValue = '';
+    }
     if (Alpine.store('status')) {
         Alpine.store('status').stopPolling();
         Alpine.store('status').stopLogsPolling();
@@ -2189,8 +2313,8 @@ window.addEventListener('beforeunload', () => {
     if (Alpine.store('rc')) {
         Alpine.store('rc').stopPolling();
     }
-    if (Alpine.store('app')) {
-        Alpine.store('app').termDisconnect();
+    if (app) {
+        app.termDisconnect();
     }
 });
 
