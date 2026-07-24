@@ -1,6 +1,6 @@
 # CHANGELOG
 
-## v2.21.0
+## v2.20.2
 
 ### Terminal
 - **Binary recording (sniffer mode)**: new `●` button in the terminal header captures the raw WebSocket byte stream into a `.bin` file for offline analysis (unknown protocols, reverse engineering, regression samples). Complements the hex view — same source, different consumer

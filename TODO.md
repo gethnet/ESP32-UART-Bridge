@@ -186,7 +186,14 @@
 
 **XIAO ESP32-S3** — implemented, basic tested (D1 UART + D2 USB with FC/MP). Needs: D3, RTS/CTS, SBUS, external antenna range, BLE testing.
 
-- [ ] **Test CRSF input from TX16S JR bay** — ESP in TX module case, D1_CRSF_IN reads channels from radio, text output via BLE/UDP. Radio sends CRSF regardless of receiver link status.
+- [ ] **CRSF RX inversion option for D1_CRSF_IN** (prerequisite for the JR bay test below)
+  - **Hardware fact learned after v2.20.0**: the TX16S JR module bay outputs CRSF **inverted** — this isn't the TBS spec default (spec says CRSF is standard non-inverted UART), it's a radio-side wiring choice that we only discovered empirically after the CRSF role was already shipped. Most ELRS and standalone Crossfire TX modules stay non-inverted, so keeping non-inverted as the D1_CRSF_IN default remains correct — the invert must be an opt-in flag for the "CRSF via JR bay" (and any other inverted-wired) case
+  - Our D1_CRSF_IN role is hardcoded non-inverted in `device_init.cpp:96`. The existing `uart1InvertRx` flag (v2.20.1) applies only to the generic D1_UART1 role, not to CRSF
+  - Two implementation paths:
+    - **Extend `uart1InvertRx` to cover D1_CRSF_IN too** — cleaner from a config standpoint (one flag, "invert RX on physical UART1"), applies uniformly across all D1 physical-UART roles. Checkbox becomes visible whenever a physical-UART role is selected on Device 1
+    - **Add a separate `crsfInvertRx`** — role-scoped flag, tighter semantics but more boilerplate. Only worth it if D1_UART1 and D1_CRSF_IN might reasonably want different values simultaneously (unlikely — physical wiring is fixed per install)
+  - Recommend the first path unless a use case for the second appears
+- [ ] **Test CRSF input from TX16S JR bay** — ESP in TX module case, D1_CRSF_IN reads channels from radio, text output via BLE/UDP. Radio sends CRSF regardless of receiver link status. Blocked on the invert option above (JR bay wiring is inverted).
 
 #### BLE Remaining Tasks
 
@@ -371,57 +378,10 @@
 
 
 
-⚠️ **pioarduino pinned to 3.3.5 (ESP-IDF 5.5.1)** — DO NOT upgrade until BLE fix confirmed
-- pioarduino 3.3.6+ (ESP-IDF 5.5.2) breaks BLE on MiniKit (ESP32 WROOM)
-- Symptom: BLE pairing succeeds but NUS characteristics inaccessible, no data transfer
+⚠️ **pioarduino pinned to 3.3.5 (ESP-IDF 5.5.1)** — BLE regression on MiniKit at 3.3.6+
+- pioarduino 3.3.6+ (ESP-IDF 5.5.2) breaks BLE on MiniKit (ESP32 WROOM): pairing succeeds but NUS characteristics inaccessible, no data transfer
 - ESP32-S3 boards not affected — only WROOM BTDM controller
-- ESP-IDF 5.5.2 changelog suspects: BTDM scheduling priority changes, NimBLE handle duplication fix, HCI status fix
-- When upgrading: uncomment `esp32-hal-bt-mem.h` include in bluetooth_ble.cpp (needed for 3.3.7+), delete cached sdkconfig files, test BLE on MiniKit before release
-
-### Likely fixed upstream — needs testing before unpinning
-
-ESP-IDF 5.5.3 / 5.5.4 ship fixes that match our symptoms exactly:
-- IDF 5.5.3 controller: "Fixed crash in btdm_controller_task on ESP32", "Fixed scan HCI command timeout issue on ESP32" — both target WROOM BTDM, the same area we suspected
-- IDF 5.5.4: "Fixed potential NimBLE host connection loss in ESP-IDF v5.5.3 on ESP32 / ESP32C3 / ESP32S3" — closes regression introduced by 5.5.3
-
-Available upgrade target: **pioarduino 55.03.38-1** (Arduino 3.3.8 + ESP-IDF 5.5.4, released 2026-04-13).
-
-Current state works stably — no rush to upgrade. When time permits:
-1. Bump platform URL to `55.03.38-1`
-2. Uncomment `esp32-hal-bt-mem.h` include in `bluetooth_ble.cpp` (BLE memory mgmt became automatic in Arduino 3.3.7)
-3. **Test on both boards before committing**:
-   - **MiniKit**: BLE NUS pairing + data transfer (the original regression)
-   - **Zero (S3)**: regression check — BLE, WiFi, USB Host, UART2 all still working
-4. Only after both boards pass — commit, remove this Known Issue note, drop the pin
-
-## Build & CI/CD
-
-### Debug Toolchain Paths
-
-```
-# ESP32 (MiniKit) - xtensa-esp32
-TOOLCHAIN: ~/.platformio/packages/toolchain-xtensa-esp-elf/bin/
-addr2line: xtensa-esp32-elf-addr2line.exe -pfiaC -e .pio/build/minikit_debug/firmware.elf <addresses>
-size:      xtensa-esp32-elf-size.exe .pio/build/minikit_production/firmware.elf
-nm:        xtensa-esp32-elf-nm.exe .pio/build/minikit_production/firmware.elf
-
-# ESP32-S3 (Zero, SuperMini, XIAO) - xtensa-esp32s3
-addr2line: xtensa-esp32s3-elf-addr2line.exe -pfiaC -e .pio/build/zero_debug/firmware.elf <addresses>
-size:      xtensa-esp32s3-elf-size.exe .pio/build/zero_production/firmware.elf
-```
-
-## Libraries and Dependencies
-
-### Current Dependencies
-```ini
-lib_deps =
-    bblanchon/ArduinoJson@^7.4.2      # JSON parsing and generation
-    fastled/FastLED@^3.10.3           # WS2812 LED control
-    arkhipenko/TaskScheduler@^4.0.3   # Task scheduling
-    ESP32Async/ESPAsyncWebServer@3.10.0 # Async web server (6x faster since 3.9.0)
-    ESP32Async/AsyncTCP@3.4.10         # TCP support (deferred close fix)
-
-# BLE builds use ESP-IDF NimBLE component (configured in sdkconfig), no external lib
-```
+- Suspected causes (ESP-IDF 5.5.2 changelog): BTDM scheduling priority changes, NimBLE handle duplication fix, HCI status fix
+- Upgrade plan is tracked as the **"pioarduino platform upgrade"** task in Web Interface Improvements — full migration approach (branch, `ESP_ARDUINO_VERSION` guards, beta from branch, testing) and target version live there
 
 
