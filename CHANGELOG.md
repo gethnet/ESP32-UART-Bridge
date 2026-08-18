@@ -12,6 +12,31 @@
   - **`beforeunload` guard** warns if the tab is closed mid-recording (data would be lost otherwise)
   - **Available only in Terminal protocol optimization mode** — that's where `/ws/terminal` is active
   - **Note**: Chromium-based browsers show an "Insecure download blocked" prompt on the ESP's HTTP page for `.bin` downloads — click **Keep**, disable `chrome://flags/#insecure-downloads-warning`, or use Firefox. Documented in README and help
+- **ANSI regression fix**: v2.20.1 attempted to write incoming WS data to only the visible container (xterm on ANSI on, `<pre>` on ANSI off) to halve event-loop cost — but the async race between WS onmessage and xterm.js init/dispose left the reference stale during ANSI transitions, dropping bytes. Reverted to writing to both containers; correctness restored, perf cost minor at terminal-typical rates
+- **Fullscreen browser shortcuts**: in view-only mode, xterm.js was calling `preventDefault` on all `Ctrl+…` combinations even the ones we didn't handle, so `Ctrl+R` (reload) and `Ctrl+F` (find) stopped working while the terminal had focus. Now unhandled Ctrl-chords return through to the browser
+- **Persistent `terminalAnsi` config removed**: the "ANSI" checkbox that persisted a render preference was confusing (why save a toggle you already flip live?). The runtime UI toggle stays; the config field, JSON key, and REST API field are gone. Existing configs with the field are silently ignored on load
+
+### Stability
+- **Terminal parser hot-path**: `terminal_parser` was doing `new uint8_t[chunkLen]` + `delete[]` on every 5 ms flush (~200/sec at typical UART rates), fragmenting the internal heap over long sessions. Replaced with a class-owned `reusableData[MAX_CHUNK]` buffer; `ParsedPacket` points into it with `allocSize = 0` as a sentinel that tells `packet_memory_pool::free()` to skip `delete[]`. Zero-alloc hot path
+- **Library upgrades** — targets the intermittent `binaryAll()` crashes seen in loopTask / mDNS / UART tasks. Both AsyncTCP and TaskScheduler patches fix races in exactly the paths we hit:
+  - **ESPAsyncWebServer**: 3.10.0 → 3.11.2
+  - **AsyncTCP**: 3.4.10 → 3.5.0 (use-after-free in `abort()` path)
+  - **TaskScheduler**: 4.0.3 → 4.0.8 (use-after-free in `execute()` path)
+  - **ArduinoJson**: 7.4.2 → 7.4.3
+
+### Frontend
+- **xterm.js** upgraded 5.5.0 → 6.1.0-beta.291 (matching `xterm-addon-fit` 0.10.0 → 0.12.0-beta.291). 6.0.0 shipped Dec 2025 but no 6.0.1 tag ever followed despite 250+ commits in master; pinned to the npm dist-tag `@beta` build which carries the fixes we specifically need:
+  - `WriteBuffer innerWrite` timers cancelled on dispose (leak fix — we dispose/reinit xterm on every ANSI toggle)
+  - `BufferNamespaceApi onBufferActivate` listener leak fix
+  - `SelectionService` trim listener leak fix
+  - UTF-8 continuation drop on `write(Uint8Array)` — relevant because we push WS binary through `TextDecoder('utf-8')`
+- **Alpine.js**: core + persist + collapse 3.15.8 → 3.15.12 (patch bumps — `x-for`, `@teleport`, `x-model`, CSP, `x-anchor` fixes)
+
+### Build
+- **MiniKit BT Classic build fits in 4 MB again**: libs upgrade + binary recording embeds pushed `minikit_bt_production` flash usage from 99.8 % (v2.20.1) to 100.1 % (overflow +1175 bytes on the 1.5 MB app slot). Switched *only this env* to `CONFIG_COMPILER_OPTIMIZATION_SIZE` (`-Os`) via `sdkconfig.minikit_bt_production.defaults` — flash drops from 1 639 575 to 1 472 323 bytes (89.9 %), ~163 KB of headroom. All other envs (S3 boards, MiniKit BLE, MiniKit non-BT) stay on `-O2` (`PERF`) — no need to touch what wasn't overflowing. Runtime impact on the BT SPP env is expected 1–3 % on CPU-bound paths; BT SPP + WebServer + UART DMA are all I/O-bound, difference should be imperceptible
+
+### Web Flasher (docs/)
+- **Auto-cleanup UI on physical USB disconnect**: `navigator.serial 'disconnect'` listener detects USB device removal on Chromium and resets the flasher UI (Disconnect button → Connect, chip badge hidden, Flash disabled). Previously the button stayed showing "Disconnect" until the user clicked it, and the next flash attempt failed with a confusing timeout
 
 ## v2.20.1
 

@@ -13,28 +13,9 @@
 
 - [ ] **Dynamic UDP connect button in terminal window** 🔵 LOW — add a small connect widget near the terminal (target IP + port fields, connect/disconnect toggle) that opens a UDP session on the fly without touching the persistent Device 4 config. Useful for quick one-off inspection sessions.
 
-- [ ] **xterm.js + fit addon upgrade** `5.5.0 → 6.x` — **wait for 6.0.1 release** before upgrading
-  - **6.0.0 released 2025-12-22**; activity in master (~30 commits) but no 6.0.1 tag yet
-  - Important fixes already in master, NOT in 6.0.0:
-    - **UTF-8 continuation drop** (#6003/#6004) — codepoint lost when `write(Uint8Array)` splits a UTF-8 sequence at 0x80 boundary. Relevant to us: we push WS binary → `TextDecoder('utf-8', {fatal:false})` → potential silent byte loss
-    - **WriteBuffer setTimeout on dispose** (#5936) — memory leak fix. Relevant: we dispose/reinit xterm on every ANSI toggle
-    - Selection drag-scroll clamp (#5993), clear at cursor home (#5992)
-  - Fixes NOT relevant to us (WebGL renderer, clipboard addon, image addon) — we use default DOM renderer, none of these addons
-  - **Wins after 6.0.1**: memory improvements at dispose (main reason to upgrade), UTF-8 correctness
-  - **Breaking changes to review** (already present in 6.0.0):
-    - Removed alt-to-ctrl+arrow mapping (may affect users relying on Alt+arrow in shell)
-    - Viewport/scrollbar reorg — visually retest scroll, fullscreen, fit resize
-    - Requires simultaneous upgrade of `xterm-addon-fit` 0.10.0 → matching version
-  - **Retest checklist** on xterm upgrade:
-    - ANSI escape rendering (colors, cursor positioning, CSI sequences)
-    - Input mode keyboard: printable, arrows, Ctrl+letters, Alt+letters, F-keys, Escape, Tab
-    - `attachCustomKeyEventHandler` still fires with same event shape
-    - `_xterm.selectAll()` / `getSelection()` / `write(text)` API unchanged
-    - fit addon still resizes on fullscreen toggle
-
 - [ ] **Migrate status/logs/crash polling to WebSocket** 🟡 LOW-MEDIUM — most of the web UI still polls `/api/status`, `/api/crashlog_json`, log fetches on `setInterval` (~5s each). Same pattern as `/ws/terminal` — one persistent WS pushes updates when they happen. Wins: less HTTP+mDNS churn (fewer stale-DNS glitches, one resolve per session vs one per poll), no background-tab throttling, near-real-time UI. Cost: new endpoint + server-side broadcaster + client subscribe/reconnect logic; REST endpoints stay for external tools (MP plugin, curl). Not urgent — polling works fine; do when there's a specific reason (e.g. real-time telemetry in UI).
 
-- [ ] **pioarduino platform upgrade** — deferred, unpin only after both boards test clean (separate step, AFTER xterm 6.x lands and soaks)
+- [ ] **pioarduino platform upgrade** — will ship as its own dedicated release (likely a patch bump that contains ONLY the platform upgrade, no unrelated changes bundled) so rollback is a single revert if the new platform misbehaves in the field
   - Currently frozen at `55.03.35` (Arduino 3.3.5 / ESP-IDF 5.5.1) — see "Known Issues & Warnings" section for the original BLE BTDM regression that caused the pin
   - Target: `55.03.38-1` (Arduino 3.3.8 / ESP-IDF 5.5.4) — ESP-IDF 5.5.3 shipped fixes matching our symptoms (`Fixed crash in btdm_controller_task on ESP32`, `Fixed scan HCI command timeout issue on ESP32`), 5.5.4 closes a NimBLE host regression from 5.5.3
   - **Migration approach**: use conditional compilation on `ESP_ARDUINO_VERSION` so the code compiles cleanly on BOTH the old (3.3.5) and the new (3.3.8) platform. Lets us flip `platformio.ini` between versions for A/B testing without editing source. Remove the `#ifdef` guards after 2-3 months of stable operation on 3.3.8 (e.g. v2.20.2 → v2.20.5).
