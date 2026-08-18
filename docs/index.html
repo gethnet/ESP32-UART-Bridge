@@ -594,6 +594,22 @@
             btnFlash.disabled = true;
         }
 
+        // Auto-cleanup when the ESP is physically unplugged from USB.
+        // Chromium fires navigator.serial 'disconnect' as soon as the OS
+        // notices device removal (works on Windows/Linux/macOS with CP2102,
+        // CH340, native S3 USB — all our target boards). Firefox/Safari
+        // don't implement WebSerial at all, so this listener is Chromium-only
+        // by definition. e.target is compared to our current 'device' handle
+        // so unrelated serial devices unplugged elsewhere don't reset our UI.
+        if ('serial' in navigator) {
+            navigator.serial.addEventListener('disconnect', (e) => {
+                if (device && e.target === device) {
+                    logInfo('Device physically disconnected');
+                    disconnect();
+                }
+            });
+        }
+
         function validateChip() {
             const expected = BOARDS[selBoard.value].chip;
             // esptool-js returns chip names like "ESP32-S3" or "ESP32"
